@@ -16,7 +16,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import heroImage from "@/assets/hero-dashboard.jpg";
+import heroImage from "/public/dashboard_pic.png";
 import chartsFeature from "/Interca.mp4";
 import aiChatFeature from "@/assets/ai-chat-feature.jpg";
 import lightningFastPerformance from "/lig.mp4";
@@ -44,28 +44,6 @@ const features = [
             "Don't wait for your data. Our platform is engineered for speed, with optimized queries and real-time updates that ensure a fluid and responsive experience across all your devices.",
         icon: Zap,
         image: lightningFastPerformance,
-    },
-    {
-        name: "Enterprise Security",
-        description:
-            "Your data's security is our top priority. We use bank-level encryption, multi-factor authentication, and strict compliance standards to keep your information safe and secure at all times.",
-        icon: Shield,
-        // image: enterpriseSecurity,
-    },
-    {
-        name: "AI-Powered Chat Assistant",
-        description:
-            "Our advanced AI assistant is more than a chatbot. It can analyze complex datasets, answer your questions in natural language, and generate custom reports, all without a single line of code.",
-        icon: MessageSquare,
-        image: aiChatFeature,
-    },
-
-    {
-        name: "Community & Support",
-        description:
-            "Join our vibrant community and access expert support. From forums and tutorials to dedicated support channels, we're here to help you succeed.",
-        icon: UsersRound,
-        // image: communityImage,
     },
 ];
 

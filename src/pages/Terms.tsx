@@ -9,7 +9,7 @@ export default function Terms() {
   const termsItems = [
     {
       title: "Acceptance of Terms",
-      description: "By using Synthwave View you accept these Terms of Service. Please read them carefully before using our platform.",
+      description: "By using DataVision AI you accept these Terms of Service. Please read them carefully before using our platform.",
       icon: FileText,
     },
     {
@@ -46,7 +46,7 @@ export default function Terms() {
               </span>
             </h1>
             <p className="mt-6 text-lg leading-8 text-muted-foreground max-w-2xl mx-auto animate-slide-up">
-              Please read these terms carefully before using our service. They govern your use of Synthwave View.
+              Please read these terms carefully before using our service. They govern your use of DataVision AI.
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
               Last updated: {updated}
