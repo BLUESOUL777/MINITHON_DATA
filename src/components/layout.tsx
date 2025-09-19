@@ -23,16 +23,16 @@ export function Layout({ children }: LayoutProps) {
               </span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
-              <a href="#" className="hover:text-primary transition-colors">
+              <a href="/about" className="hover:text-primary transition-colors">
                 About
               </a>
-              <a href="#" className="hover:text-primary transition-colors">
+              <a href="/contact" className="hover:text-primary transition-colors">
                 Contact
               </a>
-              <a href="#" className="hover:text-primary transition-colors">
+              <a href="privacy" className="hover:text-primary transition-colors">
                 Privacy
               </a>
-              <a href="#" className="hover:text-primary transition-colors">
+              <a href="/terms" className="hover:text-primary transition-colors">
                 Terms
               </a>
             </div>

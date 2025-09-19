@@ -13,6 +13,10 @@ import Chat from "./pages/Chat";
 import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import About from "./pages/about";
+import Contact from "./pages/Contact";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
 
 const queryClient = new QueryClient();
 
@@ -55,6 +59,26 @@ const App = () => (
                     <Settings />
                   </Layout>
                 </ProtectedRoute>
+              } />
+              <Route path="/about" element={
+                <Layout>
+                  <About />
+                </Layout>
+              } />
+              <Route path="/contact" element={
+                <Layout>
+                  <Contact />
+                </Layout>
+              } />
+              <Route path="/terms" element={
+                <Layout>
+                  <Terms />
+                </Layout>
+              } />
+              <Route path="/privacy" element={
+                <Layout>
+                  <Privacy />
+                </Layout>
               } />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
