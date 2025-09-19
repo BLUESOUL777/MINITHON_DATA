@@ -2,7 +2,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   BarChart3, 
   TrendingUp, 
@@ -13,12 +15,13 @@ import {
   RefreshCw,
   Filter,
   Upload,
-  Calendar
+  Calendar,
+  FileText,
+  Presentation,
+  X,
+  Check
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
-import { toPng } from 'html-to-image';
 import {
   LineChart,
   Line,
@@ -96,7 +99,6 @@ const parseCSV = (csvText: string) => {
     
     headers.forEach((header, index) => {
       const value = values[index];
-      // Try to parse as number, fallback to string
       const numValue = parseFloat(value);
       row[header.toLowerCase()] = isNaN(numValue) ? value : numValue;
     });
@@ -114,11 +116,11 @@ const transformDataForCharts = (csvData: any[]) => {
     value: row['total revenue'] || row.revenue || row.value || 0,
     growth: row['growth rate'] || row.growth || 0,
     users: row['active users'] || row.users || 0,
-    conversionRate: row['conversion rate'] || 0,
-    avgSession: row['avg session'] || 0,
-    desktopUsers: row['desktop users'] || 0,
-    mobileUsers: row['mobile users'] || 0,
-    tabletUsers: row['tablet users'] || 0,
+    conversionRate: row['conversion rate'] || row['conversion_rate'] || 0,
+    avgSession: row['avg session'] || row['avg_session'] || 0,
+    desktopUsers: row['desktop users'] || row['desktop_users'] || 0,
+    mobileUsers: row['mobile users'] || row['mobile_users'] || 0,
+    tabletUsers: row['tablet users'] || row['tablet_users'] || 0,
   }));
 };
 
@@ -127,7 +129,13 @@ export default function Dashboard() {
   const [pieData, setPieData] = useState(defaultPieData);
   const [statsData, setStatsData] = useState(stats);
   const [isDataUploaded, setIsDataUploaded] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const [filterMode, setFilterMode] = useState<'all' | 'range' | 'custom'>('all');
+  const [startMonth, setStartMonth] = useState<string>('');
+  const [endMonth, setEndMonth] = useState<string>('');
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'ppt' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,14 +149,13 @@ export default function Dashboard() {
         const parsedData = parseCSV(csvText);
         const transformedData = transformDataForCharts(parsedData);
         
-        // Update monthly data for charts
         setMonthlyData(transformedData);
-        
-        // Update stats cards based on current filter selection
-        updateStatsForMonth();
-        // Pie chart data will be updated automatically by useEffect when monthlyData changes
-        
         setIsDataUploaded(true);
+        // Reset filters when new data is uploaded
+        setFilterMode('all');
+        setSelectedMonths([]);
+        setStartMonth('');
+        setEndMonth('');
       } catch (error) {
         console.error('Error parsing CSV:', error);
         alert('Error parsing CSV file. Please check the format.');
@@ -162,11 +169,14 @@ export default function Dashboard() {
     setPieData(defaultPieData);
     setStatsData(stats);
     setIsDataUploaded(false);
-    setSelectedMonth("all");
+    setFilterMode('all');
+    setSelectedMonths([]);
+    setStartMonth('');
+    setEndMonth('');
+    setShowFilterPanel(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-    console.log('Dashboard refreshed to default state');
   };
 
   // Get available months for filter dropdown
@@ -174,775 +184,747 @@ export default function Dashboard() {
     return monthlyData.map(item => item.name);
   };
 
-  // Update stats cards based on selected month
-  const updateStatsForMonth = () => {
-    if (selectedMonth === "all") {
-      // For all months, show sum/average of all months data
-      const totalRevenue = monthlyData.reduce((sum, month) => sum + (month.value || 0), 0);
-      const totalUsers = monthlyData.reduce((sum, month) => sum + (month.users || 0), 0);
-      const avgConversionRate = monthlyData.reduce((sum, month) => sum + (month.conversionRate || 0), 0) / monthlyData.length;
-      const avgSession = monthlyData.reduce((sum, month) => sum + (month.avgSession || 0), 0) / monthlyData.length;
-      
-      setStatsData([
-        {
-          title: "Total Revenue",
-          value: `$${totalRevenue.toLocaleString()}`,
-          change: "All Months",
-          changeType: "positive" as const,
-          icon: DollarSign,
+  // Apply filters to get filtered data
+  const getFilteredData = () => {
+    if (filterMode === 'all') {
+      return monthlyData;
+    } else if (filterMode === 'range' && startMonth && endMonth) {
+      const startIndex = monthlyData.findIndex(m => m.name === startMonth);
+      const endIndex = monthlyData.findIndex(m => m.name === endMonth);
+      if (startIndex !== -1 && endIndex !== -1) {
+        return monthlyData.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1);
+      }
+    } else if (filterMode === 'custom' && selectedMonths.length > 0) {
+      return monthlyData.filter(m => selectedMonths.includes(m.name));
+    }
+    return monthlyData;
+  };
+
+  // Update stats based on filtered data
+  const updateStats = () => {
+    const filteredData = getFilteredData();
+    if (filteredData.length === 0) return;
+
+    const totalRevenue = filteredData.reduce((sum, month) => sum + (month.value || 0), 0);
+    const totalUsers = filteredData.reduce((sum, month) => sum + (month.users || 0), 0);
+    const avgConversionRate = filteredData.reduce((sum, month) => sum + (month.conversionRate || 0), 0) / filteredData.length;
+    const avgSession = filteredData.reduce((sum, month) => sum + (month.avgSession || 0), 0) / filteredData.length;
+    
+    const firstMonth = filteredData[0];
+    const lastMonth = filteredData[filteredData.length - 1];
+    const revenueGrowth = firstMonth.value ? ((lastMonth.value - firstMonth.value) / firstMonth.value * 100) : 0;
+    const userGrowth = firstMonth.users ? ((lastMonth.users - firstMonth.users) / firstMonth.users * 100) : 0;
+    
+    setStatsData([
+      {
+        title: "Total Revenue",
+        value: `$${totalRevenue.toLocaleString()}`,
+        change: revenueGrowth >= 0 ? `+${revenueGrowth.toFixed(1)}%` : `${revenueGrowth.toFixed(1)}%`,
+        changeType: revenueGrowth >= 0 ? "positive" : "negative",
+        icon: DollarSign,
+      },
+      {
+        title: "Active Users",
+        value: totalUsers.toLocaleString(),
+        change: userGrowth >= 0 ? `+${userGrowth.toFixed(1)}%` : `${userGrowth.toFixed(1)}%`,
+        changeType: userGrowth >= 0 ? "positive" : "negative",
+        icon: Users,
+      },
+      {
+        title: "Conversion Rate",
+        value: `${avgConversionRate.toFixed(1)}%`,
+        change: "Average",
+        changeType: "positive",
+        icon: TrendingUp,
+      },
+      {
+        title: "Avg. Session",
+        value: `${Math.floor(avgSession)}m ${Math.round((avgSession % 1) * 60)}s`,
+        change: "Average",
+        changeType: "positive",
+        icon: Activity,
+      },
+    ]);
+  };
+
+  // Update pie chart data based on filtered data
+  const updatePieData = () => {
+    const filteredData = getFilteredData();
+    if (filteredData.length === 0) return;
+
+    const totalDesktopUsers = filteredData.reduce((sum, month) => sum + (month.desktopUsers || 0), 0);
+    const totalMobileUsers = filteredData.reduce((sum, month) => sum + (month.mobileUsers || 0), 0);
+    const totalTabletUsers = filteredData.reduce((sum, month) => sum + (month.tabletUsers || 0), 0);
+    const totalDeviceUsers = totalDesktopUsers + totalMobileUsers + totalTabletUsers;
+    
+    if (totalDeviceUsers > 0) {
+      setPieData([
+        { 
+          name: "Desktop", 
+          value: Math.round((totalDesktopUsers / totalDeviceUsers) * 100), 
+          color: "hsl(var(--chart-1))" 
         },
-        {
-          title: "Active Users",
-          value: totalUsers.toLocaleString(),
-          change: "All Months",
-          changeType: "positive" as const,
-          icon: Users,
+        { 
+          name: "Mobile", 
+          value: Math.round((totalMobileUsers / totalDeviceUsers) * 100), 
+          color: "hsl(var(--chart-2))" 
         },
-        {
-          title: "Conversion Rate",
-          value: `${avgConversionRate.toFixed(1)}%`,
-          change: "Average",
-          changeType: "positive" as const,
-          icon: TrendingUp,
-        },
-        {
-          title: "Avg. Session",
-          value: `${Math.floor(avgSession)}m ${Math.round((avgSession % 1) * 60)}s`,
-          change: "Average",
-          changeType: "positive" as const,
-          icon: Activity,
+        { 
+          name: "Tablet", 
+          value: Math.round((totalTabletUsers / totalDeviceUsers) * 100), 
+          color: "hsl(var(--chart-3))" 
         },
       ]);
-    } else {
-      // For specific month, show that month's data
-      const monthData = monthlyData.find(month => month.name === selectedMonth);
-      if (monthData) {
-        setStatsData([
-          {
-            title: "Total Revenue",
-            value: `$${monthData.value.toLocaleString()}`,
-            change: "Current Month",
-            changeType: "positive" as const,
-            icon: DollarSign,
-          },
-          {
-            title: "Active Users",
-            value: monthData.users.toLocaleString(),
-            change: "Current Month",
-            changeType: "positive" as const,
-            icon: Users,
-          },
-          {
-            title: "Conversion Rate",
-            value: `${monthData.conversionRate}%`,
-            change: "Current Month",
-            changeType: "positive" as const,
-            icon: TrendingUp,
-          },
-          {
-            title: "Avg. Session",
-            value: `${Math.floor(monthData.avgSession)}m ${Math.round((monthData.avgSession % 1) * 60)}s`,
-            change: "Current Month",
-            changeType: "positive" as const,
-            icon: Activity,
-          },
-        ]);
-      }
     }
   };
 
-  // Handle month filter change
-  const handleMonthFilter = (month: string) => {
-    console.log('Month filter changed to:', month);
-    setSelectedMonth(month);
-    // Force update pie data immediately
-    setTimeout(() => {
-      updatePieDataForMonth();
-    }, 100);
-    // Note: Only stats cards and device charts update with month filter
-    // Revenue and user charts always show all data
-  };
-
-  // Update pie chart data based on selected month (only device charts update with month filter)
-  const updatePieDataForMonth = () => {
-    console.log('=== UPDATING PIE DATA ===');
-    console.log('Selected month:', selectedMonth);
-    console.log('Monthly data length:', monthlyData.length);
-    console.log('Monthly data:', monthlyData);
-    
-    if (selectedMonth === "all") {
-      console.log('Processing all months data');
-      // For all months, calculate total device usage across all months
-      const totalDesktopUsers = monthlyData.reduce((sum, month) => sum + (month.desktopUsers || 0), 0);
-      const totalMobileUsers = monthlyData.reduce((sum, month) => sum + (month.mobileUsers || 0), 0);
-      const totalTabletUsers = monthlyData.reduce((sum, month) => sum + (month.tabletUsers || 0), 0);
-      const totalDeviceUsers = totalDesktopUsers + totalMobileUsers + totalTabletUsers;
-      
-      console.log('All months device totals:', { totalDesktopUsers, totalMobileUsers, totalTabletUsers, totalDeviceUsers });
-      
-      if (totalDeviceUsers > 0) {
-        const newPieData = [
-          { 
-            name: "Desktop", 
-            value: Math.round((totalDesktopUsers / totalDeviceUsers) * 100), 
-            color: "hsl(var(--chart-1))" 
-          },
-          { 
-            name: "Mobile", 
-            value: Math.round((totalMobileUsers / totalDeviceUsers) * 100), 
-            color: "hsl(var(--chart-2))" 
-          },
-          { 
-            name: "Tablet", 
-            value: Math.round((totalTabletUsers / totalDeviceUsers) * 100), 
-            color: "hsl(var(--chart-3))" 
-          },
-        ];
-        console.log('Setting pie data for all months:', newPieData);
-        setPieData(newPieData);
-        console.log('Pie data updated successfully');
-      } else {
-        console.log('No device users found for all months');
-      }
+  // Handle month selection for custom filter
+  const toggleMonthSelection = (month: string) => {
+    if (selectedMonths.includes(month)) {
+      setSelectedMonths(selectedMonths.filter(m => m !== month));
     } else {
-      console.log('Processing specific month:', selectedMonth);
-      // For specific month, show that month's device distribution
-      const monthData = monthlyData.find(month => month.name === selectedMonth);
-      console.log('Found month data:', monthData);
-      
-      if (monthData) {
-        const totalDeviceUsers = (monthData.desktopUsers || 0) + (monthData.mobileUsers || 0) + (monthData.tabletUsers || 0);
-        console.log('Month device totals:', { 
-          desktopUsers: monthData.desktopUsers, 
-          mobileUsers: monthData.mobileUsers, 
-          tabletUsers: monthData.tabletUsers, 
-          totalDeviceUsers 
-        });
-        
-        if (totalDeviceUsers > 0) {
-          const newPieData = [
-            { 
-              name: "Desktop", 
-              value: Math.round(((monthData.desktopUsers || 0) / totalDeviceUsers) * 100), 
-              color: "hsl(var(--chart-1))" 
-            },
-            { 
-              name: "Mobile", 
-              value: Math.round(((monthData.mobileUsers || 0) / totalDeviceUsers) * 100), 
-              color: "hsl(var(--chart-2))" 
-            },
-            { 
-              name: "Tablet", 
-              value: Math.round(((monthData.tabletUsers || 0) / totalDeviceUsers) * 100), 
-              color: "hsl(var(--chart-3))" 
-            },
-          ];
-          console.log('Setting pie data for month:', newPieData);
-          setPieData(newPieData);
-          console.log('Pie data updated successfully');
-        } else {
-          console.log('No device users found for month:', selectedMonth);
-        }
-      } else {
-        console.log('No data found for month:', selectedMonth);
-      }
+      setSelectedMonths([...selectedMonths, month]);
     }
-    console.log('=== END PIE DATA UPDATE ===');
   };
 
-  // Always use all monthly data for charts (no filtering)
-  const filteredData = monthlyData;
+  // Apply filters
+  const applyFilters = () => {
+    updateStats();
+    updatePieData();
+    setShowFilterPanel(false);
+  };
 
-  // Update stats and device charts when month filter changes
+  // Clear filters
+  const clearFilters = () => {
+    setFilterMode('all');
+    setSelectedMonths([]);
+    setStartMonth('');
+    setEndMonth('');
+    updateStats();
+    updatePieData();
+  };
+
+  // Get filtered data for charts
+  const filteredData = getFilteredData();
+
+  // Update stats and pie data when filters change
   useEffect(() => {
-    updateStatsForMonth();
-    updatePieDataForMonth(); // Device charts update with month filter
-  }, [selectedMonth, monthlyData]);
+    updateStats();
+    updatePieData();
+  }, [monthlyData, filterMode, selectedMonths, startMonth, endMonth]);
 
-  // Debug pie data changes
-  useEffect(() => {
-    console.log('Pie data state changed:', pieData);
-  }, [pieData]);
-
+  // Export to PDF function
   const handleExportPDF = async () => {
+    setIsExporting(true);
+    setExportFormat('pdf');
+    
     try {
-      // Get the dashboard container
-      const dashboardElement = document.getElementById('dashboard-container');
-      if (!dashboardElement) {
-        console.error('Dashboard container not found');
-        return;
-      }
-
-      // Show loading state
-      const exportButton = document.querySelector('button[onclick*="handleExportPDF"]') as HTMLButtonElement;
-      if (exportButton) {
-        exportButton.disabled = true;
-        exportButton.textContent = 'Exporting PDF...';
-      }
-
-      // Create a new PDF document
+      // Create a dynamic script element to load jsPDF
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      document.head.appendChild(script);
+      
+      await new Promise((resolve) => {
+        script.onload = resolve;
+      });
+      
+      // @ts-ignore
+      const { jsPDF } = window.jspdf;
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-
-      // Define margins
-      const leftMargin = 25;
-      const rightMargin = 25;
-      const topMargin = 30;
-      const bottomMargin = 25;
-      const contentWidth = pageWidth - leftMargin - rightMargin;
-      const contentHeight = pageHeight - topMargin - bottomMargin;
-
-      // Helper function to add a line
-      const addLine = (y: number) => {
+      
+      // Design variables
+      const primaryColor = [59, 130, 246]; // Blue
+      const textDark = [51, 51, 51];
+      const textLight = [102, 102, 102];
+      
+      // Helper functions
+      const addHeader = (text: string, y: number, size: number = 20) => {
+        pdf.setFontSize(size);
+        pdf.setTextColor(...primaryColor);
+        pdf.text(text, pageWidth / 2, y, { align: 'center' });
+      };
+      
+      const addSection = (title: string, y: number) => {
+        pdf.setFontSize(14);
+        pdf.setTextColor(...textDark);
+        pdf.text(title, 20, y);
         pdf.setDrawColor(200, 200, 200);
-        pdf.line(leftMargin, y, pageWidth - rightMargin, y);
+        pdf.line(20, y + 2, pageWidth - 20, y + 2);
+        return y + 10;
       };
-
-      // Helper function to add a section header
-      const addSectionHeader = (text: string, y: number) => {
-        pdf.setFontSize(16);
-        pdf.setTextColor(51, 51, 51);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text(text, leftMargin, y);
-        addLine(y + 2);
-      };
-
-      // Helper function to add a subsection
-      const addSubsection = (text: string, y: number) => {
+      
+      const addMetric = (label: string, value: string, x: number, y: number) => {
+        pdf.setFontSize(10);
+        pdf.setTextColor(...textLight);
+        pdf.text(label, x, y);
         pdf.setFontSize(12);
-        pdf.setTextColor(102, 102, 102);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text(text, leftMargin, y);
+        pdf.setTextColor(...textDark);
+        pdf.text(value, x, y + 5);
       };
-
-      // Helper function to add regular text
-      const addText = (text: string, x: number, y: number, options: any = {}) => {
-        pdf.setFontSize(options.fontSize || 10);
-        pdf.setTextColor(options.color || 51, 51, 51);
-        pdf.setFont('helvetica', options.style || 'normal');
-        pdf.text(text, x, y);
-      };
-
-      // Page 1: Cover Page
-      // Header with gradient effect (simulated with rectangles)
-      pdf.setFillColor(59, 130, 246); // Blue
-      pdf.rect(0, 0, pageWidth, 60, 'F');
       
-      // Title
+      // Page 1: Cover & Summary
+      pdf.setFillColor(...primaryColor);
+      pdf.rect(0, 0, pageWidth, 40, 'F');
+      
       pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(28);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Analytics Dashboard', pageWidth / 2, 25, { align: 'center' });
-      
-      pdf.setFontSize(16);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text('Comprehensive Business Intelligence Report', pageWidth / 2, 35, { align: 'center' });
-      
-      // Date and time
+      pdf.setFontSize(24);
+      pdf.text('Analytics Dashboard Report', pageWidth / 2, 20, { align: 'center' });
       pdf.setFontSize(12);
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('en-US', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      });
-      const timeStr = now.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
-      pdf.text(`Generated on ${dateStr} at ${timeStr}`, pageWidth / 2, 45, { align: 'center' });
-
-      // Reset text color
-      pdf.setTextColor(51, 51, 51);
-
+      pdf.text(new Date().toLocaleDateString(), pageWidth / 2, 30, { align: 'center' });
+      
       // Executive Summary
-      addSectionHeader('Executive Summary', 80);
+      let yPos = addSection('Executive Summary', 60);
       
-      const totalRevenue = monthlyData.reduce((sum, month) => sum + (month.value || 0), 0);
-      const totalUsers = monthlyData.reduce((sum, month) => sum + (month.users || 0), 0);
-      const avgConversionRate = monthlyData.reduce((sum, month) => sum + (month.conversionRate || 0), 0) / monthlyData.length;
-      const avgSessionDuration = monthlyData.reduce((sum, month) => sum + (month.avgSession || 0), 0) / monthlyData.length;
-      const latestMonth = monthlyData[monthlyData.length - 1];
-      const firstMonth = monthlyData[0];
-      const revenueGrowth = ((latestMonth.value - firstMonth.value) / firstMonth.value * 100);
-      const userGrowth = ((latestMonth.users - firstMonth.users) / firstMonth.users * 100);
-
-      addSubsection('Key Performance Indicators', 100);
-      addText(`• Total Revenue: $${totalRevenue.toLocaleString()}`, leftMargin + 5, 110);
-      addText(`• Total Active Users: ${totalUsers.toLocaleString()}`, leftMargin + 5, 120);
-      addText(`• Average Conversion Rate: ${avgConversionRate.toFixed(1)}%`, leftMargin + 5, 130);
-      addText(`• Average Session Duration: ${Math.floor(avgSessionDuration)}m ${Math.round((avgSessionDuration % 1) * 60)}s`, leftMargin + 5, 140);
-
-      addSubsection('Growth Analysis', 155);
-      addText(`• Revenue Growth: ${revenueGrowth >= 0 ? '+' : ''}${revenueGrowth.toFixed(1)}%`, leftMargin + 5, 165);
-      addText(`• User Growth: ${userGrowth >= 0 ? '+' : ''}${userGrowth.toFixed(1)}%`, leftMargin + 5, 175);
-      addText(`• Data Period: ${monthlyData.length} months (${firstMonth.name} - ${latestMonth.name})`, leftMargin + 5, 185);
-
-      // Add new page for dashboard
-      pdf.addPage();
-
-      // Page 2: Current Tab Visualizations
-      addSectionHeader('Dashboard Visualizations', 20);
-
-      // Wait for charts to render
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Find the active tab content specifically
-      let activeTabContent = null;
+      const summaryData = getFilteredData();
+      const totalRevenue = summaryData.reduce((sum, m) => sum + m.value, 0);
+      const totalUsers = summaryData.reduce((sum, m) => sum + m.users, 0);
+      const avgConversion = summaryData.reduce((sum, m) => sum + m.conversionRate, 0) / summaryData.length;
       
-      // Try different selectors to find the active tab
-      const possibleSelectors = [
-        '[data-state="active"]',
-        '[role="tabpanel"]',
-        '.space-y-4[style*="block"]',
-        '.space-y-4:not([style*="none"])'
-      ];
+      addMetric('Total Revenue', `$${totalRevenue.toLocaleString()}`, 30, yPos);
+      addMetric('Total Users', totalUsers.toLocaleString(), 80, yPos);
+      addMetric('Avg Conversion', `${avgConversion.toFixed(1)}%`, 130, yPos);
       
-      for (const selector of possibleSelectors) {
-        activeTabContent = document.querySelector(selector);
-        if (activeTabContent) {
-          console.log('Found active tab with selector:', selector);
-          break;
-        }
-      }
+      yPos += 25;
       
-      // If still not found, try to find any visible tab content
-      if (!activeTabContent) {
-        const allTabContents = document.querySelectorAll('.space-y-4');
-        for (const tab of allTabContents) {
-          const style = window.getComputedStyle(tab);
-          if (style.display !== 'none' && style.visibility !== 'hidden') {
-            activeTabContent = tab;
-            console.log('Found visible tab content');
-            break;
-          }
-        }
-      }
-      
-      console.log('Active tab content found:', activeTabContent);
-      
-      if (activeTabContent) {
-        try {
-          // Wait for charts to render completely
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Force a synchronous layout calculation
-          const charts = activeTabContent.querySelectorAll('.recharts-wrapper');
-          charts.forEach(chart => chart.getBoundingClientRect());
-          
-          // Get dimensions after charts are rendered
-          const rect = activeTabContent.getBoundingClientRect();
-          const scrollWidth = Math.max(activeTabContent.scrollWidth, rect.width);
-          const scrollHeight = Math.max(activeTabContent.scrollHeight, rect.height);
-          
-          console.log('Processing charts for export:', charts.length);
-          
-          // Capture the content
-          const tabCanvas = await html2canvas(activeTabContent as HTMLElement, {
-            scale: 2, // Higher scale for better quality
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: '#ffffff',
-            logging: true,
-            width: scrollWidth,
-            height: scrollHeight,
-            scrollX: -window.scrollX,
-            scrollY: -window.scrollY,
-            windowWidth: scrollWidth,
-            windowHeight: scrollHeight,
-            foreignObjectRendering: true, // Enable better SVG rendering
-            onclone: (clonedDoc) => {
-              // Process chart containers first
-              const chartContainers = clonedDoc.querySelectorAll('.recharts-wrapper');
-              console.log('Processing chart containers:', chartContainers.length);
-              
-              chartContainers.forEach(container => {
-                const containerEl = container as HTMLElement;
-                const rect = container.getBoundingClientRect();
-                
-                // Set explicit dimensions
-                containerEl.style.width = `${rect.width}px`;
-                containerEl.style.height = `${rect.height}px`;
-                containerEl.style.position = 'relative';
-                containerEl.style.display = 'block';
-                containerEl.style.overflow = 'visible';
-              });
-
-              // Handle chart SVGs
-              const chartSvgs = clonedDoc.querySelectorAll('.recharts-wrapper svg');
-              chartSvgs.forEach(svg => {
-                const svgEl = svg as SVGElement;
-                // Preserve viewBox
-                const viewBox = svgEl.getAttribute('viewBox');
-                if (viewBox) {
-                  svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-                }
-                // Set dimensions
-                svgEl.style.width = '100%';
-                svgEl.style.height = '100%';
-                svgEl.style.overflow = 'visible';
-              });
-
-              // Handle specific chart elements
-              ['line', 'area', 'bar', 'pie', 'cell'].forEach(type => {
-                const elements = clonedDoc.querySelectorAll(`.recharts-${type}`);
-                elements.forEach(el => {
-                  const element = el as SVGElement;
-                  element.style.opacity = '1';
-                  element.style.visibility = 'visible';
-                });
-              });
-
-              // Handle chart text and labels
-              const textElements = clonedDoc.querySelectorAll('.recharts-text, .recharts-label');
-              textElements.forEach(el => {
-                const element = el as SVGElement;
-                element.style.fontFamily = 'Arial, sans-serif';
-                element.style.visibility = 'visible';
-              });
-
-              // Ensure tooltips are hidden
-              const tooltips = clonedDoc.querySelectorAll('.recharts-tooltip-wrapper');
-              tooltips.forEach(tooltip => {
-                (tooltip as HTMLElement).style.display = 'none';
-              });
-            }
-          });
-
-          console.log('Canvas captured, processing image...');
-          
-          // Convert to high-quality PNG
-          const tabImgData = tabCanvas.toDataURL('image/png', 1.0);
-          
-          if (!tabImgData) {
-            throw new Error('Failed to generate image data from canvas');
-          }
-          
-          console.log('Image data generated successfully');
-          console.log('Canvas dimensions:', { 
-            width: tabCanvas.width, 
-            height: tabCanvas.height 
-          });
-          
-          // Calculate optimal dimensions for PDF
-          const maxWidth = contentWidth;
-          const maxHeight = contentHeight - 40; // Leave margin for headers/footers
-          
-          // Calculate scaling while maintaining aspect ratio
-          const aspectRatio = tabCanvas.width / tabCanvas.height;
-          let imgWidth = maxWidth;
-          let imgHeight = imgWidth / aspectRatio;
-          
-          // If height exceeds maximum, scale based on height
-          if (imgHeight > maxHeight) {
-            imgHeight = maxHeight;
-            imgWidth = imgHeight * aspectRatio;
-          }
-          
-          // Ensure minimum dimensions
-          imgWidth = Math.max(imgWidth, 100);
-          imgHeight = Math.max(imgHeight, 100);
-          
-          console.log('Final image dimensions:', { imgWidth, imgHeight });
-          
-          console.log('Final image dimensions:', { imgWidth, imgHeight });
-          
-          // Center the image
-          const xOffset = leftMargin + (maxWidth - imgWidth) / 2;
-          const yOffset = topMargin + 20;
-
-          pdf.addImage(tabImgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
-          
-        } catch (error) {
-          console.error('Error capturing tab content:', error);
-          
-          // Fallback: Add text saying charts couldn't be captured
-          addText('Charts could not be captured in this export.', leftMargin, topMargin + 50);
-          addText('Please ensure charts are fully loaded before exporting.', leftMargin, topMargin + 60);
-        }
-      } else {
-        console.log('No active tab content found');
-        addText('No active tab content found for export.', leftMargin, topMargin + 50);
-      }
-
-      // Add new page for detailed data
-      pdf.addPage();
-
-      // Page 6: Detailed Data Analysis
-      addSectionHeader('Detailed Monthly Analysis', 20);
-
-      // Create a professional table
-      const tableHeaders = ['Month', 'Revenue ($)', 'Users', 'Conv. Rate (%)', 'Avg. Session', 'Growth (%)'];
-      const colWidths = [30, 35, 25, 25, 25, 20];
-      const startY = topMargin + 20;
-      
-      // Table header with background
-      pdf.setFillColor(248, 250, 252);
-      pdf.rect(leftMargin, startY - 5, contentWidth, 12, 'F');
-      
-      // Header text
+      // Filter Information
+      yPos = addSection('Analysis Period', yPos);
       pdf.setFontSize(10);
-      pdf.setTextColor(51, 51, 51);
-      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...textDark);
       
-      let xPos = leftMargin;
-      tableHeaders.forEach((header, index) => {
-        pdf.text(header, xPos + 2, startY + 3);
-        xPos += colWidths[index];
+      if (filterMode === 'all') {
+        pdf.text('All available data', 30, yPos);
+      } else if (filterMode === 'range') {
+        pdf.text(`Date Range: ${startMonth} to ${endMonth}`, 30, yPos);
+      } else if (filterMode === 'custom') {
+        pdf.text(`Selected Months: ${selectedMonths.join(', ')}`, 30, yPos);
+      }
+      
+      yPos += 15;
+      
+      // Monthly Data Table
+      yPos = addSection('Monthly Performance Data', yPos);
+      
+      // Table headers
+      const headers = ['Month', 'Revenue', 'Users', 'Conv. Rate', 'Avg Session'];
+      const colWidths = [30, 35, 30, 30, 35];
+      let xPos = 20;
+      
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(20, yPos - 5, pageWidth - 40, 10, 'F');
+      
+      pdf.setFontSize(10);
+      pdf.setTextColor(...textDark);
+      headers.forEach((header, i) => {
+        pdf.text(header, xPos + 2, yPos);
+        xPos += colWidths[i];
       });
-
-      // Add line under header
-      addLine(startY + 5);
-
-      // Table data with alternating row colors
-      let yPos = startY + 15;
-      monthlyData.forEach((row, index) => {
-        if (yPos > pageHeight - bottomMargin - 20) {
+      
+      yPos += 10;
+      
+      // Table data
+      filteredData.forEach((row, index) => {
+        if (yPos > pageHeight - 30) {
           pdf.addPage();
-          yPos = topMargin + 20;
+          yPos = 20;
         }
-
-        // Alternate row colors
+        
         if (index % 2 === 0) {
           pdf.setFillColor(249, 250, 251);
-          pdf.rect(leftMargin, yPos - 3, contentWidth, 10, 'F');
+          pdf.rect(20, yPos - 5, pageWidth - 40, 8, 'F');
         }
-
-        xPos = leftMargin;
+        
+        xPos = 20;
         const rowData = [
           row.name,
-          `$${row.value?.toLocaleString() || 0}`,
-          row.users?.toLocaleString() || 0,
-          `${row.conversionRate?.toFixed(1) || 0}%`,
-          `${Math.floor(row.avgSession || 0)}m ${Math.round((row.avgSession % 1) * 60)}s`,
-          `${row.growth?.toFixed(1) || 0}%`
+          `$${row.value.toLocaleString()}`,
+          row.users.toLocaleString(),
+          `${row.conversionRate.toFixed(1)}%`,
+          `${Math.floor(row.avgSession)}m ${Math.round((row.avgSession % 1) * 60)}s`
         ];
-
-        pdf.setFontSize(9);
-        pdf.setTextColor(51, 51, 51);
-        pdf.setFont('helvetica', 'normal');
-
-        rowData.forEach((data, colIndex) => {
-          pdf.text(String(data), xPos + 2, yPos + 3);
-          xPos += colWidths[colIndex];
-        });
-
-        yPos += 10;
-      });
-
-      // Add summary statistics
-      const summaryY = yPos + 20;
-      addSectionHeader('Statistical Summary', summaryY);
-
-      // Calculate comprehensive statistics
-      const revenues = monthlyData.map(m => m.value);
-      const maxRevenue = Math.max(...revenues);
-      const minRevenue = Math.min(...revenues);
-      const avgRevenue = revenues.reduce((a, b) => a + b, 0) / revenues.length;
-      const revenueStdDev = Math.sqrt(revenues.reduce((sq, n) => sq + Math.pow(n - avgRevenue, 2), 0) / revenues.length);
-
-      const users = monthlyData.map(m => m.users);
-      const maxUsers = Math.max(...users);
-      const minUsers = Math.min(...users);
-      const avgUsers = users.reduce((a, b) => a + b, 0) / users.length;
-
-      const conversions = monthlyData.map(m => m.conversionRate);
-      const maxConversion = Math.max(...conversions);
-      const minConversion = Math.min(...conversions);
-      const avgConversionRateStats = conversions.reduce((a, b) => a + b, 0) / conversions.length;
-
-      const sessions = monthlyData.map(m => m.avgSession);
-      const maxSession = Math.max(...sessions);
-      const minSession = Math.min(...sessions);
-      const avgSessionDurationStats = sessions.reduce((a, b) => a + b, 0) / sessions.length;
-
-      const growths = monthlyData.map(m => m.growth);
-      const maxGrowth = Math.max(...growths);
-      const minGrowth = Math.min(...growths);
-      const avgGrowth = growths.reduce((a, b) => a + b, 0) / growths.length;
-
-      addSubsection('Revenue Analysis', summaryY + 20);
-      addText(`• Highest Revenue: $${maxRevenue.toLocaleString()}`, leftMargin + 5, summaryY + 30);
-      addText(`• Lowest Revenue: $${minRevenue.toLocaleString()}`, leftMargin + 5, summaryY + 40);
-      addText(`• Average Monthly Revenue: $${avgRevenue.toLocaleString()}`, leftMargin + 5, summaryY + 50);
-      addText(`• Revenue Standard Deviation: $${revenueStdDev.toLocaleString()}`, leftMargin + 5, summaryY + 60);
-      addText(`• Revenue Range: $${(maxRevenue - minRevenue).toLocaleString()}`, leftMargin + 5, summaryY + 70);
-
-      addSubsection('User Engagement Analysis', summaryY + 90);
-      addText(`• Peak Users: ${maxUsers.toLocaleString()}`, leftMargin + 5, summaryY + 100);
-      addText(`• Lowest Users: ${minUsers.toLocaleString()}`, leftMargin + 5, summaryY + 110);
-      addText(`• Average Monthly Users: ${Math.round(avgUsers).toLocaleString()}`, leftMargin + 5, summaryY + 120);
-      addText(`• User Growth Rate: ${userGrowth >= 0 ? '+' : ''}${userGrowth.toFixed(1)}%`, leftMargin + 5, summaryY + 130);
-
-      addSubsection('Conversion Performance', summaryY + 150);
-      addText(`• Highest Conversion Rate: ${maxConversion.toFixed(1)}%`, leftMargin + 5, summaryY + 160);
-      addText(`• Lowest Conversion Rate: ${minConversion.toFixed(1)}%`, leftMargin + 5, summaryY + 170);
-      addText(`• Average Conversion Rate: ${avgConversionRateStats.toFixed(1)}%`, leftMargin + 5, summaryY + 180);
-
-      addSubsection('Session Duration Analysis', summaryY + 200);
-      addText(`• Longest Avg Session: ${Math.floor(maxSession)}m ${Math.round((maxSession % 1) * 60)}s`, leftMargin + 5, summaryY + 210);
-      addText(`• Shortest Avg Session: ${Math.floor(minSession)}m ${Math.round((minSession % 1) * 60)}s`, leftMargin + 5, summaryY + 220);
-      addText(`• Average Session Duration: ${Math.floor(avgSessionDurationStats)}m ${Math.round((avgSessionDurationStats % 1) * 60)}s`, leftMargin + 5, summaryY + 230);
-
-      // Add new page for device analysis
-      pdf.addPage();
-
-      // Page 7: Device Distribution Analysis
-      addSectionHeader('Device Distribution Analysis', 20);
-
-      // Calculate device statistics
-      const latestData = monthlyData[monthlyData.length - 1];
-      const totalDeviceUsers = (latestData.desktopUsers || 0) + (latestData.mobileUsers || 0) + (latestData.tabletUsers || 0);
-      
-      if (totalDeviceUsers > 0) {
-        const desktopPercent = Math.round(((latestData.desktopUsers || 0) / totalDeviceUsers) * 100);
-        const mobilePercent = Math.round(((latestData.mobileUsers || 0) / totalDeviceUsers) * 100);
-        const tabletPercent = Math.round(((latestData.tabletUsers || 0) / totalDeviceUsers) * 100);
-
-        addSubsection('Current Device Distribution', 40);
-        addText(`• Desktop Users: ${latestData.desktopUsers?.toLocaleString() || 0} (${desktopPercent}%)`, leftMargin + 5, 50);
-        addText(`• Mobile Users: ${latestData.mobileUsers?.toLocaleString() || 0} (${mobilePercent}%)`, leftMargin + 5, 60);
-        addText(`• Tablet Users: ${latestData.tabletUsers?.toLocaleString() || 0} (${tabletPercent}%)`, leftMargin + 5, 70);
-        addText(`• Total Device Users: ${totalDeviceUsers.toLocaleString()}`, leftMargin + 5, 80);
-
-        // Device trend analysis
-        const firstMonthData = monthlyData[0];
-        const firstTotalDeviceUsers = (firstMonthData.desktopUsers || 0) + (firstMonthData.mobileUsers || 0) + (firstMonthData.tabletUsers || 0);
         
-        if (firstTotalDeviceUsers > 0) {
-          const firstDesktopPercent = Math.round(((firstMonthData.desktopUsers || 0) / firstTotalDeviceUsers) * 100);
-          const firstMobilePercent = Math.round(((firstMonthData.mobileUsers || 0) / firstTotalDeviceUsers) * 100);
-          const firstTabletPercent = Math.round(((firstMonthData.tabletUsers || 0) / firstTotalDeviceUsers) * 100);
-
-          addSubsection('Device Trend Analysis', 100);
-          addText(`Desktop: ${firstDesktopPercent}% → ${desktopPercent}% (${desktopPercent - firstDesktopPercent >= 0 ? '+' : ''}${desktopPercent - firstDesktopPercent}%)`, leftMargin + 5, 110);
-          addText(`Mobile: ${firstMobilePercent}% → ${mobilePercent}% (${mobilePercent - firstMobilePercent >= 0 ? '+' : ''}${mobilePercent - firstMobilePercent}%)`, leftMargin + 5, 120);
-          addText(`Tablet: ${firstTabletPercent}% → ${tabletPercent}% (${tabletPercent - firstTabletPercent >= 0 ? '+' : ''}${tabletPercent - firstTabletPercent}%)`, leftMargin + 5, 130);
-        }
-      }
-
-      // Add new page for insights and recommendations
+        pdf.setFontSize(9);
+        pdf.setTextColor(...textDark);
+        rowData.forEach((data, i) => {
+          pdf.text(data, xPos + 2, yPos);
+          xPos += colWidths[i];
+        });
+        
+        yPos += 8;
+      });
+      
+      // Page 2: Insights
       pdf.addPage();
+      
+      addHeader('Key Insights & Recommendations', 30, 18);
+      
+      yPos = 50;
+      
+      // Growth Analysis
+      yPos = addSection('Growth Analysis', yPos);
+      
+      const firstMonth = filteredData[0];
+      const lastMonth = filteredData[filteredData.length - 1];
+      const revenueGrowth = ((lastMonth.value - firstMonth.value) / firstMonth.value * 100).toFixed(1);
+      const userGrowth = ((lastMonth.users - firstMonth.users) / firstMonth.users * 100).toFixed(1);
+      
+      pdf.setFontSize(10);
+      pdf.setTextColor(...textDark);
+      pdf.text(`• Revenue Growth: ${revenueGrowth}%`, 30, yPos);
+      pdf.text(`• User Growth: ${userGrowth}%`, 30, yPos + 7);
+      pdf.text(`• Peak Revenue Month: ${filteredData.reduce((max, m) => m.value > max.value ? m : max).name}`, 30, yPos + 14);
+      pdf.text(`• Peak Users Month: ${filteredData.reduce((max, m) => m.users > max.users ? m : max).name}`, 30, yPos + 21);
+      
+      yPos += 35;
+      
+      // Device Distribution
+      yPos = addSection('Device Distribution', yPos);
+      
+      const totalDesktop = filteredData.reduce((sum, m) => sum + m.desktopUsers, 0);
+      const totalMobile = filteredData.reduce((sum, m) => sum + m.mobileUsers, 0);
+      const totalTablet = filteredData.reduce((sum, m) => sum + m.tabletUsers, 0);
+      const totalDevices = totalDesktop + totalMobile + totalTablet;
+      
+      pdf.text(`• Desktop: ${Math.round(totalDesktop / totalDevices * 100)}%`, 30, yPos);
+      pdf.text(`• Mobile: ${Math.round(totalMobile / totalDevices * 100)}%`, 30, yPos + 7);
+      pdf.text(`• Tablet: ${Math.round(totalTablet / totalDevices * 100)}%`, 30, yPos + 14);
+      
+      yPos += 30;
+      
+      // Recommendations
+      yPos = addSection('Strategic Recommendations', yPos);
+      
+      const recommendations = [];
+      if (parseFloat(revenueGrowth) > 10) {
+        recommendations.push('Continue current growth strategies and consider scaling operations');
+      } else if (parseFloat(revenueGrowth) < 0) {
+        recommendations.push('Review pricing strategy and customer retention programs');
+      }
+      
+      if (parseFloat(userGrowth) > 15) {
+        recommendations.push('Focus on user retention to maintain growth momentum');
+      } else {
+        recommendations.push('Invest in user acquisition and marketing campaigns');
+      }
+      
+      if (avgConversion > 4) {
+        recommendations.push('Maintain excellent conversion rates through continuous UX optimization');
+      } else {
+        recommendations.push('Conduct user research to improve conversion funnel');
+      }
+      
+      recommendations.forEach((rec, i) => {
+        pdf.text(`${i + 1}. ${rec}`, 30, yPos + (i * 7));
+      });
+      
+      // Save PDF
+      pdf.save(`analytics-report-${new Date().toISOString().split('T')[0]}.pdf`);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please try again.');
+    } finally {
+      setIsExporting(false);
+      setExportFormat(null);
+    }
+  };
 
-      // Page 8: Business Insights & Recommendations
-      addSectionHeader('Business Insights & Recommendations', 20);
-
-      // Generate insights based on data
+  // Export to PowerPoint function
+  const handleExportPPT = async () => {
+    setIsExporting(true);
+    setExportFormat('ppt');
+    
+    try {
+      // Create a dynamic script element to load PptxGenJS
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js';
+      document.head.appendChild(script);
+      
+      await new Promise((resolve) => {
+        script.onload = resolve;
+      });
+      
+      // @ts-ignore
+      const pptx = new PptxGenJS();
+      
+      // Set presentation properties
+      pptx.author = 'Analytics Dashboard';
+      pptx.company = 'Your Company';
+      pptx.subject = 'Analytics Report';
+      pptx.title = 'Dashboard Analytics Report';
+      
+      // Define master slide
+      pptx.defineSlideMaster({
+        title: 'MASTER_SLIDE',
+        background: { color: 'FFFFFF' },
+        objects: [
+          { rect: { x: 0, y: 0, w: '100%', h: 0.75, fill: { color: '3B82F6' } } },
+          { text: { 
+            text: 'Analytics Dashboard', 
+            options: { x: 0.5, y: 0.1, w: 9, h: 0.5, fontSize: 18, color: 'FFFFFF', bold: true } 
+          }}
+        ]
+      });
+      
+      // Slide 1: Title Slide
+      let slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      slide.addText('Analytics Dashboard Report', {
+        x: 0.5,
+        y: 1.5,
+        w: 9,
+        h: 1,
+        fontSize: 36,
+        bold: true,
+        color: '333333',
+        align: 'center'
+      });
+      
+      slide.addText(`Generated on ${new Date().toLocaleDateString()}`, {
+        x: 0.5,
+        y: 2.8,
+        w: 9,
+        h: 0.5,
+        fontSize: 14,
+        color: '666666',
+        align: 'center'
+      });
+      
+      slide.addText(`Analysis Period: ${filterMode === 'all' ? 'All Data' : filterMode === 'range' ? `${startMonth} - ${endMonth}` : selectedMonths.join(', ')}`, {
+        x: 0.5,
+        y: 3.5,
+        w: 9,
+        h: 0.5,
+        fontSize: 12,
+        color: '999999',
+        align: 'center'
+      });
+      
+      // Slide 2: Executive Summary
+      slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      slide.addText('Executive Summary', {
+        x: 0.5,
+        y: 1,
+        w: 9,
+        h: 0.5,
+        fontSize: 24,
+        bold: true,
+        color: '333333'
+      });
+      
+      const summaryData = getFilteredData();
+      const totalRevenue = summaryData.reduce((sum, m) => sum + m.value, 0);
+      const totalUsers = summaryData.reduce((sum, m) => sum + m.users, 0);
+      const avgConversion = summaryData.reduce((sum, m) => sum + m.conversionRate, 0) / summaryData.length;
+      const avgSession = summaryData.reduce((sum, m) => sum + m.avgSession, 0) / summaryData.length;
+      
+      // Create summary cards
+      const summaryCards = [
+        { title: 'Total Revenue', value: `$${totalRevenue.toLocaleString()}`, color: '3B82F6' },
+        { title: 'Total Users', value: totalUsers.toLocaleString(), color: '10B981' },
+        { title: 'Avg Conversion', value: `${avgConversion.toFixed(1)}%`, color: 'F59E0B' },
+        { title: 'Avg Session', value: `${Math.floor(avgSession)}m`, color: '8B5CF6' }
+      ];
+      
+      summaryCards.forEach((card, i) => {
+        const x = 0.5 + (i % 2) * 4.5;
+        const y = 2 + Math.floor(i / 2) * 1.8;
+        
+        // Card background
+        slide.addShape('rect', {
+          x: x,
+          y: y,
+          w: 4,
+          h: 1.5,
+          fill: { color: 'F8F9FA' },
+          line: { color: 'E5E7EB', width: 1 }
+        });
+        
+        // Card title
+        slide.addText(card.title, {
+          x: x + 0.2,
+          y: y + 0.2,
+          w: 3.6,
+          h: 0.4,
+          fontSize: 12,
+          color: '666666'
+        });
+        
+        // Card value
+        slide.addText(card.value, {
+          x: x + 0.2,
+          y: y + 0.7,
+          w: 3.6,
+          h: 0.6,
+          fontSize: 20,
+          bold: true,
+          color: card.color
+        });
+      });
+      
+      // Slide 3: Monthly Performance Table
+      slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      slide.addText('Monthly Performance Data', {
+        x: 0.5,
+        y: 1,
+        w: 9,
+        h: 0.5,
+        fontSize: 24,
+        bold: true,
+        color: '333333'
+      });
+      
+      // Create table data
+      const tableData = [
+        [
+          { text: 'Month', options: { bold: true, fill: { color: 'F8F9FA' } } },
+          { text: 'Revenue', options: { bold: true, fill: { color: 'F8F9FA' } } },
+          { text: 'Users', options: { bold: true, fill: { color: 'F8F9FA' } } },
+          { text: 'Conv. Rate', options: { bold: true, fill: { color: 'F8F9FA' } } },
+          { text: 'Avg Session', options: { bold: true, fill: { color: 'F8F9FA' } } }
+        ]
+      ];
+      
+      filteredData.forEach(row => {
+        tableData.push([
+          { text: row.name, options: { bold: false, fill: { color: 'FFFFFF' } } },
+          { text: `$${row.value.toLocaleString()}`, options: { bold: false, fill: { color: 'FFFFFF' } } },
+          { text: row.users.toLocaleString(), options: { bold: false, fill: { color: 'FFFFFF' } } },
+          { text: `${row.conversionRate.toFixed(1)}%`, options: { bold: false, fill: { color: 'FFFFFF' } } },
+          { text: `${Math.floor(row.avgSession)}m`, options: { bold: false, fill: { color: 'FFFFFF' } } }
+        ]);
+      });
+      
+      slide.addTable(tableData, {
+        x: 0.5,
+        y: 2,
+        w: 9,
+        h: 4,
+        fontSize: 10,
+        border: { type: 'solid', color: 'E5E7EB' },
+        fill: { color: 'FFFFFF' }
+      });
+      
+      // Slide 4: Growth Analysis
+      slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      slide.addText('Growth Analysis & Trends', {
+        x: 0.5,
+        y: 1,
+        w: 9,
+        h: 0.5,
+        fontSize: 24,
+        bold: true,
+        color: '333333'
+      });
+      
+      const firstMonth = filteredData[0];
+      const lastMonth = filteredData[filteredData.length - 1];
+      const revenueGrowth = ((lastMonth.value - firstMonth.value) / firstMonth.value * 100);
+      const userGrowth = ((lastMonth.users - firstMonth.users) / firstMonth.users * 100);
+      
+      const growthMetrics = [
+        { label: 'Revenue Growth', value: `${revenueGrowth.toFixed(1)}%`, positive: revenueGrowth >= 0 },
+        { label: 'User Growth', value: `${userGrowth.toFixed(1)}%`, positive: userGrowth >= 0 },
+        { label: 'Period', value: `${firstMonth.name} - ${lastMonth.name}`, positive: true },
+        { label: 'Data Points', value: `${filteredData.length} months`, positive: true }
+      ];
+      
+      growthMetrics.forEach((metric, i) => {
+        const y = 2.5 + i * 0.8;
+        
+        slide.addText(metric.label + ':', {
+          x: 2,
+          y: y,
+          w: 3,
+          h: 0.5,
+          fontSize: 14,
+          color: '666666'
+        });
+        
+        slide.addText(metric.value, {
+          x: 5,
+          y: y,
+          w: 3,
+          h: 0.5,
+          fontSize: 14,
+          bold: true,
+          color: metric.positive ? '10B981' : 'EF4444'
+        });
+      });
+      
+      // Slide 5: Device Distribution
+      slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      slide.addText('Device Distribution Analysis', {
+        x: 0.5,
+        y: 1,
+        w: 9,
+        h: 0.5,
+        fontSize: 24,
+        bold: true,
+        color: '333333'
+      });
+      
+      const totalDesktop = filteredData.reduce((sum, m) => sum + m.desktopUsers, 0);
+      const totalMobile = filteredData.reduce((sum, m) => sum + m.mobileUsers, 0);
+      const totalTablet = filteredData.reduce((sum, m) => sum + m.tabletUsers, 0);
+      const totalDevices = totalDesktop + totalMobile + totalTablet;
+      
+      const deviceData = [
+        { device: 'Desktop', users: totalDesktop, percent: Math.round(totalDesktop / totalDevices * 100) },
+        { device: 'Mobile', users: totalMobile, percent: Math.round(totalMobile / totalDevices * 100) },
+        { device: 'Tablet', users: totalTablet, percent: Math.round(totalTablet / totalDevices * 100) }
+      ];
+      
+      deviceData.forEach((device, i) => {
+        const y = 2.5 + i * 1.2;
+        
+        slide.addText(device.device, {
+          x: 2,
+          y: y,
+          w: 2,
+          h: 0.5,
+          fontSize: 14,
+          color: '666666'
+        });
+        
+        // Progress bar background
+        slide.addShape('rect', {
+          x: 4,
+          y: y,
+          w: 3,
+          h: 0.4,
+          fill: { color: 'F3F4F6' },
+          line: { color: 'E5E7EB', width: 0.5 }
+        });
+        
+        // Progress bar fill
+        slide.addShape('rect', {
+          x: 4,
+          y: y,
+          w: 3 * (device.percent / 100),
+          h: 0.4,
+          fill: { color: i === 0 ? '3B82F6' : i === 1 ? '10B981' : 'F59E0B' },
+          line: 'none'
+        });
+        
+        slide.addText(`${device.percent}% (${device.users.toLocaleString()} users)`, {
+          x: 7.2,
+          y: y,
+          w: 2,
+          h: 0.5,
+          fontSize: 12,
+          color: '333333'
+        });
+      });
+      
+      // Slide 6: Key Insights & Recommendations
+      slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      slide.addText('Key Insights & Recommendations', {
+        x: 0.5,
+        y: 1,
+        w: 9,
+        h: 0.5,
+        fontSize: 24,
+        bold: true,
+        color: '333333'
+      });
+      
       const insights = [];
       const recommendations = [];
-
-      // Revenue insights
-      if (revenueGrowth > 10) {
-        insights.push(`Strong revenue growth of ${revenueGrowth.toFixed(1)}% indicates healthy business expansion`);
-        recommendations.push('Continue current growth strategies and consider scaling operations');
-      } else if (revenueGrowth < 0) {
-        insights.push(`Revenue decline of ${Math.abs(revenueGrowth).toFixed(1)}% requires immediate attention`);
-        recommendations.push('Review pricing strategy, marketing efforts, and customer retention programs');
-      } else {
-        insights.push(`Stable revenue growth of ${revenueGrowth.toFixed(1)}% shows consistent performance`);
-        recommendations.push('Focus on optimizing existing processes and exploring new growth opportunities');
-      }
-
-      // User insights
-      if (userGrowth > 15) {
-        insights.push(`Excellent user acquisition with ${userGrowth.toFixed(1)}% growth`);
-        recommendations.push('Maintain user acquisition momentum and focus on retention strategies');
-      } else if (userGrowth < 5) {
-        insights.push(`Slow user growth of ${userGrowth.toFixed(1)}% suggests need for marketing optimization`);
-        recommendations.push('Invest in marketing campaigns and user acquisition channels');
-      }
-
-      // Conversion insights
-      if (avgConversionRate > 5) {
-        insights.push(`High conversion rate of ${avgConversionRate.toFixed(1)}% indicates effective user experience`);
-        recommendations.push('Maintain current UX/UI and consider A/B testing for further optimization');
-      } else if (avgConversionRate < 2) {
-        insights.push(`Low conversion rate of ${avgConversionRate.toFixed(1)}% suggests UX improvements needed`);
-        recommendations.push('Conduct user research and optimize conversion funnel');
-      }
-
-      // Device insights
-      if (totalDeviceUsers > 0) {
-        const desktopPercent = Math.round(((latestData.desktopUsers || 0) / totalDeviceUsers) * 100);
-        const mobilePercent = Math.round(((latestData.mobileUsers || 0) / totalDeviceUsers) * 100);
-        if (desktopPercent > 60) {
-          insights.push(`Desktop-dominant user base (${desktopPercent}%) suggests B2B or professional focus`);
-          recommendations.push('Optimize desktop experience and consider mobile-first features');
-        } else if (mobilePercent > 60) {
-          insights.push(`Mobile-dominant user base (${mobilePercent}%) indicates consumer-focused product`);
-          recommendations.push('Prioritize mobile optimization and responsive design');
-        }
-      }
-
-      addSubsection('Key Insights', 40);
-      insights.forEach((insight, index) => {
-        addText(`• ${insight}`, leftMargin + 5, 50 + (index * 10));
-      });
-
-      addSubsection('Strategic Recommendations', 40 + (insights.length * 10) + 20);
-      recommendations.forEach((rec, index) => {
-        addText(`• ${rec}`, leftMargin + 5, 50 + (insights.length * 10) + 20 + (index * 10));
-      });
-
-      // Add new page for technical details
-      pdf.addPage();
-
-      // Page 9: Technical Details & Methodology
-      addSectionHeader('Technical Details & Methodology', 20);
-
-      addSubsection('Data Sources', 40);
-      addText('• CSV file upload with monthly business metrics', leftMargin + 5, 50);
-      addText('• Real-time dashboard visualization using React and Recharts', leftMargin + 5, 60);
-      addText('• Statistical analysis and trend calculations', leftMargin + 5, 70);
-
-      addSubsection('Metrics Definitions', 80);
-      addText('• Total Revenue: Monthly revenue generated from all sources', leftMargin + 5, 90);
-      addText('• Active Users: Number of unique users who engaged with the platform', leftMargin + 5, 100);
-      addText('• Conversion Rate: Percentage of users who completed desired actions', leftMargin + 5, 110);
-      addText('• Average Session: Mean duration of user sessions in minutes', leftMargin + 5, 120);
-      addText('• Growth Rate: Month-over-month percentage change in metrics', leftMargin + 5, 130);
-
-      addSubsection('Analysis Methods', 150);
-      addText('• Trend Analysis: Linear regression and growth rate calculations', leftMargin + 5, 160);
-      addText('• Statistical Measures: Mean, standard deviation, min/max values', leftMargin + 5, 170);
-      addText('• Comparative Analysis: Period-over-period and benchmark comparisons', leftMargin + 5, 180);
-      addText('• Device Analytics: User distribution across device types', leftMargin + 5, 190);
-
-      // Save the PDF
-      const fileName = `analytics-dashboard-report-${new Date().toISOString().split('T')[0]}.pdf`;
-      pdf.save(fileName);
       
-      console.log('PDF exported successfully');
-    } catch (error) {
-      console.error('Error exporting PDF:', error);
-      alert('Error exporting PDF. Please try again.');
-    } finally {
-      // Reset button state
-      const exportButton = document.querySelector('button[onclick*="handleExportPDF"]') as HTMLButtonElement;
-      if (exportButton) {
-        exportButton.disabled = false;
-        exportButton.innerHTML = '<svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Export PDF';
+      if (revenueGrowth > 10) {
+        insights.push('Strong revenue growth indicates healthy business expansion');
+        recommendations.push('Continue current strategies and consider scaling');
+      } else if (revenueGrowth < 0) {
+        insights.push('Revenue decline requires immediate attention');
+        recommendations.push('Review pricing and customer retention strategies');
       }
+      
+      if (userGrowth > 15) {
+        insights.push('Excellent user acquisition performance');
+        recommendations.push('Focus on retention to maintain momentum');
+      } else if (userGrowth < 5) {
+        insights.push('User growth needs improvement');
+        recommendations.push('Invest in marketing and acquisition channels');
+      }
+      
+      if (avgConversion > 4) {
+        insights.push('High conversion rates show effective UX');
+        recommendations.push('Continue optimization through A/B testing');
+      } else {
+        insights.push('Conversion rates have room for improvement');
+        recommendations.push('Conduct user research to optimize funnel');
+      }
+      
+      slide.addText('Key Insights:', {
+        x: 0.5,
+        y: 2,
+        w: 4,
+        h: 0.5,
+        fontSize: 16,
+        bold: true,
+        color: '3B82F6'
+      });
+      
+      insights.forEach((insight, i) => {
+        slide.addText(`• ${insight}`, {
+          x: 0.7,
+          y: 2.5 + i * 0.5,
+          w: 4,
+          h: 0.4,
+          fontSize: 11,
+          color: '666666'
+        });
+      });
+      
+      slide.addText('Recommendations:', {
+        x: 5,
+        y: 2,
+        w: 4,
+        h: 0.5,
+        fontSize: 16,
+        bold: true,
+        color: '10B981'
+      });
+      
+      recommendations.forEach((rec, i) => {
+        slide.addText(`• ${rec}`, {
+          x: 5.2,
+          y: 2.5 + i * 0.5,
+          w: 4,
+          h: 0.4,
+          fontSize: 11,
+          color: '666666'
+        });
+      });
+      
+      // Save presentation
+      pptx.writeFile({ fileName: `analytics-report-${new Date().toISOString().split('T')[0]}.pptx` });
+      
+    } catch (error) {
+      console.error('Error generating PowerPoint:', error);
+      alert('Error generating PowerPoint. Please try again.');
+    } finally {
+      setIsExporting(false);
+      setExportFormat(null);
     }
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <div id="dashboard-container" className="container mx-auto p-6 space-y-8">
-        {/* Header */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground font-serif">
-              Analytics Dashboard
-            </h1>
-            <p className="text-muted-foreground">
-              Monitor your key metrics and performance indicators.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40 dark:from-slate-900 dark:via-slate-800/30 dark:to-indigo-900/40">
+      {/* Enhanced Header */}
+      <div className="dashboard-header sticky top-0 z-40">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-gradient">
+                Analytics Dashboard
+              </h1>
+              <p className="text-muted-foreground text-base sm:text-lg font-medium">
+                Monitor your key metrics and performance indicators
+              </p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
               <Input
                 ref={fileInputRef}
                 type="file"
@@ -955,243 +937,669 @@ export default function Dashboard() {
                 variant="outline"
                 size="sm"
                 onClick={() => fileInputRef.current?.click()}
+                className="btn-glass hover:bg-blue-50 border-blue-200 text-blue-700 hover:text-blue-800 transition-smooth hover:shadow-md"
               >
                 <Upload className="h-4 w-4 mr-2" />
                 Upload CSV
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFilterPanel(!showFilterPanel)}
+                className={`btn-glass border-purple-200 text-purple-700 hover:text-purple-800 transition-smooth hover:shadow-md ${
+                  showFilterPanel ? 'bg-purple-50 border-purple-300' : 'hover:bg-purple-50'
+                }`}
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                Filters {filterMode !== 'all' && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                    {filterMode === 'custom' ? selectedMonths.length : 'Range'}
+                  </span>
+                )}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleRefresh}
+                className="btn-glass hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-slate-800 transition-smooth hover:shadow-md"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Reset
+              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={handleExportPDF}
+                  disabled={isExporting}
+                  className="gradient-primary hover:shadow-lg transition-smooth disabled:opacity-50"
+                >
+                  {isExporting && exportFormat === 'pdf' ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Export PDF
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={handleExportPPT}
+                  disabled={isExporting}
+                  className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white shadow-md hover:shadow-lg transition-smooth disabled:opacity-50"
+                >
+                  {isExporting && exportFormat === 'ppt' ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Presentation className="h-4 w-4 mr-2" />
+                      Export PPT
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
-            <Select value={selectedMonth} onValueChange={handleMonthFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select Month" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex items-center">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    All Months
-                  </div>
-                </SelectItem>
-                {getAvailableMonths().map((month) => (
-                  <SelectItem key={month} value={month}>
-                    {month}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
-            <Button variant="default" size="sm" onClick={handleExportPDF}>
-              <Download className="h-4 w-4 mr-2" />
-              Export PDF
-            </Button>
           </div>
         </div>
+      </div>
 
+      {/* Filter Panel */}
+      {showFilterPanel && (
+        <div className="glass-panel border-b border-border/60 shadow-lg animate-slide-up">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-xl font-semibold text-foreground">Filter Options</h3>
+                  <p className="text-sm text-muted-foreground">Customize your data view with advanced filtering</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowFilterPanel(false)}
+                  className="hover:bg-muted transition-smooth"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              
+              {/* Filter Mode Selection */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="space-y-3">
+                  <Label className={`flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 hover:bg-slate-50 ${
+                    filterMode === 'all' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="filterMode"
+                      checked={filterMode === 'all'}
+                      onChange={() => setFilterMode('all')}
+                      className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div className="flex-1">
+                      <span className="font-medium text-slate-900">All Data</span>
+                      <p className="text-sm text-slate-600 mt-1">Show all available months</p>
+                    </div>
+                  </Label>
+                </div>
+                
+                <div className="space-y-3">
+                  <Label className={`flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 hover:bg-slate-50 ${
+                    filterMode === 'range' ? 'border-purple-300 bg-purple-50' : 'border-slate-200'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="filterMode"
+                      checked={filterMode === 'range'}
+                      onChange={() => setFilterMode('range')}
+                      className="w-4 h-4 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="flex-1">
+                      <span className="font-medium text-slate-900">Date Range</span>
+                      <p className="text-sm text-slate-600 mt-1">Select start and end months</p>
+                    </div>
+                  </Label>
+                  {filterMode === 'range' && (
+                    <div className="flex gap-3 pl-7">
+                      <Select value={startMonth} onValueChange={setStartMonth}>
+                        <SelectTrigger className="w-[140px] h-9 bg-white border-slate-300 focus:border-purple-500 focus:ring-purple-500">
+                          <SelectValue placeholder="Start" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getAvailableMonths().map(month => (
+                            <SelectItem key={month} value={month}>{month}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-slate-500 self-center font-medium">to</span>
+                      <Select value={endMonth} onValueChange={setEndMonth}>
+                        <SelectTrigger className="w-[140px] h-9 bg-white border-slate-300 focus:border-purple-500 focus:ring-purple-500">
+                          <SelectValue placeholder="End" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getAvailableMonths().map(month => (
+                            <SelectItem key={month} value={month}>{month}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="space-y-3">
+                  <Label className={`flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all duration-200 hover:bg-slate-50 ${
+                    filterMode === 'custom' ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="filterMode"
+                      checked={filterMode === 'custom'}
+                      onChange={() => setFilterMode('custom')}
+                      className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div className="flex-1">
+                      <span className="font-medium text-slate-900">Custom Selection</span>
+                      <p className="text-sm text-slate-600 mt-1">Choose specific months</p>
+                    </div>
+                  </Label>
+                  {filterMode === 'custom' && (
+                    <div className="flex flex-wrap gap-2 pl-7">
+                      {getAvailableMonths().map(month => (
+                        <Label
+                          key={month}
+                          className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border transition-all duration-200 hover:shadow-sm ${
+                            selectedMonths.includes(month)
+                              ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <Checkbox
+                            checked={selectedMonths.includes(month)}
+                            onCheckedChange={() => toggleMonthSelection(month)}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm font-medium">{month}</span>
+                        </Label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Apply/Clear Buttons */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearFilters}
+                  className="bg-white hover:bg-slate-50 border-slate-300 text-slate-700"
+                >
+                  Clear Filters
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={applyFilters}
+                  className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-md hover:shadow-lg transition-all duration-200"
+                >
+                  <Check className="h-4 w-4 mr-2" />
+                  Apply Filters
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Stats Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
           {statsData.map((stat, index) => {
             const Icon = stat.icon;
             return (
-              <Card key={stat.title} className="hover-lift animate-fade-in relative overflow-hidden group" style={{ animationDelay: `${index * 0.1}s` }}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors duration-300">
+              <Card key={`${stat.title}-${index}`} className="dashboard-card hover-lift group">
+                <div className="absolute inset-0 bg-gradient-to-br from-card/50 to-transparent pointer-events-none" />
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 relative">
+                  <CardTitle className="text-sm font-semibold text-muted-foreground group-hover:text-foreground transition-smooth">
                     {stat.title}
                   </CardTitle>
-                  <Icon className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors duration-300 hover-rotate" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold group-hover:scale-105 transition-transform duration-300">{stat.value}</div>
-                  <p className={`text-xs flex items-center gap-1 ${
-                    stat.changeType === 'positive' ? 'text-success' : 'text-destructive'
+                  <div className={`p-2.5 rounded-xl transition-smooth ${
+                    stat.changeType === 'positive' 
+                      ? 'bg-success/10 text-success group-hover:bg-success/20' 
+                      : 'bg-destructive/10 text-destructive group-hover:bg-destructive/20'
                   }`}>
-                    <TrendingUp className={`h-3 w-3 ${stat.changeType === 'positive' ? 'animate-bounce-gentle' : ''}`} />
-                    {stat.change} from last month
-                  </p>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                </CardHeader>
+                <CardContent className="relative">
+                  <div className="text-3xl font-bold text-foreground mb-2">{stat.value}</div>
+                  <div className={`flex items-center gap-1.5 text-sm font-medium ${
+                    stat.changeType === 'positive' ? 'status-positive' : 'status-negative'
+                  }`}>
+                    <TrendingUp className="h-4 w-4" />
+                    <span>{stat.change}</span>
+                  </div>
                 </CardContent>
-                {/* Subtle background accent */}
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
               </Card>
             );
           })}
         </div>
 
         {/* Charts Section */}
-        <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="revenue">Revenue</TabsTrigger>
-            <TabsTrigger value="users">Users</TabsTrigger>
-            <TabsTrigger value="devices">Devices</TabsTrigger>
+        <Tabs defaultValue="overview" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4 bg-white/70 backdrop-blur-sm border border-slate-200/60 rounded-xl p-1 shadow-sm">
+            <TabsTrigger 
+              value="overview" 
+              className="data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-slate-900 text-slate-600 font-medium transition-all duration-200"
+            >
+              Overview
+            </TabsTrigger>
+            <TabsTrigger 
+              value="revenue" 
+              className="data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-slate-900 text-slate-600 font-medium transition-all duration-200"
+            >
+              Revenue
+            </TabsTrigger>
+            <TabsTrigger 
+              value="users" 
+              className="data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-slate-900 text-slate-600 font-medium transition-all duration-200"
+            >
+              Users
+            </TabsTrigger>
+            <TabsTrigger 
+              value="devices" 
+              className="data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-slate-900 text-slate-600 font-medium transition-all duration-200"
+            >
+              Devices
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-              <Card className="col-span-4 hover-lift">
-                <CardHeader>
-                  <CardTitle>Revenue Overview</CardTitle>
-                  <CardDescription>Monthly revenue growth over time</CardDescription>
+          <TabsContent value="overview" className="space-y-6 mt-6">
+            <div className="grid gap-6 lg:grid-cols-7">
+              <Card className="lg:col-span-4 bg-white/70 backdrop-blur-sm border-slate-200/60 shadow-lg hover:shadow-xl transition-all duration-300">
+                <CardHeader className="space-y-2">
+                  <CardTitle className="text-xl font-bold text-slate-900">Revenue Overview</CardTitle>
+                  <CardDescription className="text-slate-600 font-medium">
+                    Monthly revenue growth ({filteredData.length} months shown)
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="pl-2">
-                  <ResponsiveContainer width="100%" height={350}>
-                    <AreaChart data={filteredData}>
-                      <defs>
-                        <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Area 
-                        type="monotone" 
-                        dataKey="value" 
-                        stroke="hsl(var(--chart-1))" 
-                        fillOpacity={1} 
-                        fill="url(#colorRevenue)" 
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <div className="h-[350px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={filteredData}>
+                        <defs>
+                          <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" opacity={0.6} />
+                        <XAxis 
+                          dataKey="name" 
+                          stroke="#64748B" 
+                          fontSize={12} 
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis 
+                          stroke="#64748B" 
+                          fontSize={12} 
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(value) => `$${value.toLocaleString()}`}
+                        />
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '8px',
+                            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                          }}
+                          formatter={(value: any) => [`$${value.toLocaleString()}`, 'Revenue']}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="value" 
+                          stroke="#3B82F6" 
+                          strokeWidth={3}
+                          fillOpacity={1} 
+                          fill="url(#colorRevenue)" 
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
 
-              <Card className="col-span-3 hover-lift">
-                <CardHeader>
-                  <CardTitle>Device Usage</CardTitle>
-                  <CardDescription>User distribution by device type</CardDescription>
+              <Card className="lg:col-span-3 bg-white/70 backdrop-blur-sm border-slate-200/60 shadow-lg hover:shadow-xl transition-all duration-300">
+                <CardHeader className="space-y-2">
+                  <CardTitle className="text-xl font-bold text-slate-900">Device Usage</CardTitle>
+                  <CardDescription className="text-slate-600 font-medium">User distribution by device type</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={350}>
-                    <PieChart key={`pie-chart-${selectedMonth}-${pieData.length}`}>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={120}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}-${entry.value}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <div className="h-[350px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={70}
+                          outerRadius={130}
+                          paddingAngle={6}
+                          dataKey="value"
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} stroke="white" strokeWidth={2} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '8px',
+                            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                          }}
+                          formatter={(value: any) => [`${value}%`, 'Usage']}
+                        />
+                        <Legend 
+                          verticalAlign="bottom" 
+                          height={36}
+                          wrapperStyle={{ paddingTop: '20px' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          <TabsContent value="revenue" className="space-y-4">
-            <Card className="hover-lift">
-              <CardHeader>
-                <CardTitle>Revenue Analytics</CardTitle>
-                <CardDescription>Detailed revenue breakdown and trends</CardDescription>
+          <TabsContent value="revenue" className="space-y-6 mt-6">
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-200/60 shadow-lg hover:shadow-xl transition-all duration-300">
+              <CardHeader className="space-y-2">
+                <CardTitle className="text-xl font-bold text-slate-900">Revenue Analytics</CardTitle>
+                <CardDescription className="text-slate-600 font-medium">
+                  Detailed revenue breakdown ({filteredData.length} months shown)
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={400}>
-                  <BarChart data={filteredData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis yAxisId="left" />
-                    <YAxis yAxisId="right" orientation="right" />
-                    <Tooltip />
-                    <Legend />
-                    <Bar yAxisId="left" dataKey="value" fill="#3b82f6" name="Revenue ($)" />
-                    <Bar yAxisId="right" dataKey="growth" fill="#10b981" name="Growth Rate (%)" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={filteredData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" opacity={0.6} />
+                      <XAxis 
+                        dataKey="name" 
+                        stroke="#64748B" 
+                        fontSize={12} 
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis 
+                        yAxisId="left" 
+                        stroke="#64748B" 
+                        fontSize={12} 
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(value) => `$${value.toLocaleString()}`}
+                      />
+                      <YAxis 
+                        yAxisId="right" 
+                        orientation="right" 
+                        stroke="#64748B" 
+                        fontSize={12} 
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(value) => `${value}%`}
+                      />
+                      <Tooltip 
+                        contentStyle={{
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          border: '1px solid #E2E8F0',
+                          borderRadius: '8px',
+                          boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                      <Legend />
+                      <Bar 
+                        yAxisId="left" 
+                        dataKey="value" 
+                        fill="#3B82F6" 
+                        name="Revenue ($)" 
+                        radius={[2, 2, 0, 0]}
+                      />
+                      <Bar 
+                        yAxisId="right" 
+                        dataKey="growth" 
+                        fill="#10B981" 
+                        name="Growth (%)" 
+                        radius={[2, 2, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="users" className="space-y-4">
-            <Card className="hover-lift">
-              <CardHeader>
-                <CardTitle>User Growth</CardTitle>
-                <CardDescription>User acquisition and retention metrics</CardDescription>
+          <TabsContent value="users" className="space-y-6 mt-6">
+            <Card className="bg-white/70 backdrop-blur-sm border-slate-200/60 shadow-lg hover:shadow-xl transition-all duration-300">
+              <CardHeader className="space-y-2">
+                <CardTitle className="text-xl font-bold text-slate-900">User Growth</CardTitle>
+                <CardDescription className="text-slate-600 font-medium">
+                  User acquisition trends ({filteredData.length} months shown)
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={400}>
-                  <LineChart data={filteredData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="users" 
-                      stroke="hsl(var(--chart-3))" 
-                      strokeWidth={3}
-                      dot={{ fill: "hsl(var(--chart-3))", strokeWidth: 2, r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={filteredData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" opacity={0.6} />
+                      <XAxis 
+                        dataKey="name" 
+                        stroke="#64748B" 
+                        fontSize={12} 
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis 
+                        stroke="#64748B" 
+                        fontSize={12} 
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis 
+                        yAxisId="right" 
+                        orientation="right" 
+                        stroke="#64748B" 
+                        fontSize={12} 
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(value) => `${value}%`}
+                      />
+                      <Tooltip 
+                        contentStyle={{
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          border: '1px solid #E2E8F0',
+                          borderRadius: '8px',
+                          boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                      <Legend />
+                      <Line 
+                        type="monotone" 
+                        dataKey="users" 
+                        stroke="#8B5CF6" 
+                        strokeWidth={4}
+                        dot={{ fill: "#8B5CF6", strokeWidth: 2, r: 6 }}
+                        activeDot={{ r: 8, stroke: "#8B5CF6", strokeWidth: 2, fill: "white" }}
+                        name="Active Users"
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="conversionRate" 
+                        stroke="#F59E0B" 
+                        strokeWidth={3}
+                        strokeDasharray="8 4"
+                        dot={{ fill: "#F59E0B", strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6, stroke: "#F59E0B", strokeWidth: 2, fill: "white" }}
+                        name="Conversion Rate (%)"
+                        yAxisId="right"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="devices" className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Card className="hover-lift">
-                <CardHeader>
-                  <CardTitle>Device Distribution</CardTitle>
-                  <CardDescription>Current device usage breakdown</CardDescription>
+          <TabsContent value="devices" className="space-y-6 mt-6">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card className="bg-white/70 backdrop-blur-sm border-slate-200/60 shadow-lg hover:shadow-xl transition-all duration-300">
+                <CardHeader className="space-y-2">
+                  <CardTitle className="text-xl font-bold text-slate-900">Device Distribution</CardTitle>
+                  <CardDescription className="text-slate-600 font-medium">Current period breakdown</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart key={`device-pie-chart-${selectedMonth}-${pieData.length}`}>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={100}
-                        dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`device-cell-${index}-${entry.value}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100}
+                          dataKey="value"
+                          label={({ name, value }) => `${name}: ${value}%`}
+                          labelLine={false}
+                          stroke="white"
+                          strokeWidth={2}
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '8px',
+                            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                          }}
+                          formatter={(value: any) => [`${value}%`, 'Usage']}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
 
-              <Card className="hover-lift">
-                <CardHeader>
-                  <CardTitle>Device Trends</CardTitle>
-                  <CardDescription>Monthly device usage trends</CardDescription>
+              <Card className="bg-white/70 backdrop-blur-sm border-slate-200/60 shadow-lg hover:shadow-xl transition-all duration-300">
+                <CardHeader className="space-y-2">
+                  <CardTitle className="text-xl font-bold text-slate-900">Device Trends</CardTitle>
+                  <CardDescription className="text-slate-600 font-medium">Monthly device usage patterns</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <AreaChart data={filteredData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Area 
-                        type="monotone" 
-                        dataKey="users" 
-                        stroke="hsl(var(--chart-4))" 
-                        fill="hsl(var(--chart-4))" 
-                        fillOpacity={0.3}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={filteredData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" opacity={0.6} />
+                        <XAxis 
+                          dataKey="name" 
+                          stroke="#64748B" 
+                          fontSize={12} 
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis 
+                          stroke="#64748B" 
+                          fontSize={12} 
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '8px',
+                            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                          }}
+                        />
+                        <Legend />
+                        <Area 
+                          type="monotone" 
+                          dataKey="desktopUsers" 
+                          stackId="1"
+                          stroke="#3B82F6" 
+                          fill="#3B82F6" 
+                          fillOpacity={0.8}
+                          name="Desktop"
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="mobileUsers" 
+                          stackId="1"
+                          stroke="#10B981" 
+                          fill="#10B981" 
+                          fillOpacity={0.8}
+                          name="Mobile"
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="tabletUsers" 
+                          stackId="1"
+                          stroke="#F59E0B" 
+                          fill="#F59E0B" 
+                          fillOpacity={0.8}
+                          name="Tablet"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
         </Tabs>
+        
+        {/* Status Bar */}
+        {(filterMode !== 'all' || isDataUploaded) && (
+          <div className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80 backdrop-blur-sm border border-blue-200/60 rounded-xl p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Calendar className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">
+                    {filterMode === 'all' ? 'Showing all data' : 
+                     filterMode === 'range' ? `Showing ${startMonth || 'Start'} to ${endMonth || 'End'}` :
+                     `Showing ${selectedMonths.length} selected months`}
+                    {isDataUploaded && ' (Custom data uploaded)'}
+                  </p>
+                  <p className="text-xs text-blue-700 mt-0.5">
+                    Data points: {filteredData.length} months
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="text-blue-600 hover:text-blue-700 hover:bg-blue-100/70 transition-colors duration-200"
+              >
+                Clear Filters
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

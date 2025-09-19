@@ -15,7 +15,7 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary-hover",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        hero: "bg-gradient-to-r from-primary to-primary-glow text-primary-foreground hover:shadow-glow hover:scale-105 font-semibold transition-bounce",
+        hero: "bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold rounded-lg px-6 py-3 transform-gpu will-change-transform transition-transform transition-shadow duration-300 ease-out hover:scale-105 hover:-translate-y-1 hover:shadow-glow focus:outline-none focus:ring-2 focus:ring-primary/30 active:translate-y-0.5 motion-safe:animate-hero-float",
         dashboard: "bg-card text-card-foreground border border-border hover:bg-accent hover:text-accent-foreground hover-lift",
         premium: "bg-gradient-to-r from-chart-2 to-chart-5 text-white hover:shadow-glow hover:scale-105 font-semibold",
       },

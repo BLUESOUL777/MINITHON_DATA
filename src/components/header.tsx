@@ -61,9 +61,9 @@ export function Header() {
         
         <div className="hidden lg:flex lg:flex-1 lg:justify-end lg:gap-4">
           <ThemeToggle />
-          <Button asChild variant="default" className="hover-lift">
+          {/* <Button asChild variant="default" className="hover-lift">
             <Link to="/auth">Sign In</Link>
-          </Button>
+          </Button> */}
         </div>
       </nav>
       
