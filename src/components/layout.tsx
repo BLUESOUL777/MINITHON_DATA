@@ -1,4 +1,5 @@
 import { Header } from "@/components/header";
+import { Link } from "react-router-dom";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -23,18 +24,18 @@ export function Layout({ children }: LayoutProps) {
               </span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
-              <a href="/about" className="hover:text-primary transition-colors">
+              <Link to="/about" className="hover:text-primary transition-colors">
                 About
-              </a>
-              <a href="/contact" className="hover:text-primary transition-colors">
+              </Link>
+              <Link to="/contact" className="hover:text-primary transition-colors">
                 Contact
-              </a>
-              <a href="privacy" className="hover:text-primary transition-colors">
+              </Link>
+              <Link to="/privacy" className="hover:text-primary transition-colors">
                 Privacy
-              </a>
-              <a href="/terms" className="hover:text-primary transition-colors">
+              </Link>
+              <Link to="/terms" className="hover:text-primary transition-colors">
                 Terms
-              </a>
+              </Link>
             </div>
           </div>
         </div>

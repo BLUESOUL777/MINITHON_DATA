@@ -51,12 +51,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Handle different auth events
       switch (event) {
-        case 'SIGNED_IN':
-          toast({
-            title: "Welcome back!",
-            description: "You have been successfully signed in.",
-          });
-          break;
         case 'SIGNED_OUT':
           toast({
             title: "Signed out",
