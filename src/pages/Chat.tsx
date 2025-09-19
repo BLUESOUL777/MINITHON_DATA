@@ -31,7 +31,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      content: "Hello! I'm your AI data assistant powered by Mistral 7B. I can help you analyze data, create insights, understand analytics, and answer questions about data visualization. What would you like to explore today?",
+      content: "Hello! I'm JOD_AI data assistant powered by Mistral 7B. I can help you analyze data, create insights, understand analytics, and answer questions about data visualization. What would you like to explore today?",
       role: "assistant",
       timestamp: new Date(),
     },
