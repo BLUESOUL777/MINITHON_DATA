@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, BarChart3, MessageSquare, Home, Settings } from "lucide-react";
+import { Menu, X, BarChart3, MessageSquare, Home, Settings, Contact, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,8 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
   { name: "AI Chat", href: "/chat", icon: MessageSquare },
   { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Contact", href: "/contact", icon: Contact },
+  { name: "About", href: "/about", icon:  Info},
 ];
 
 export function Header() {

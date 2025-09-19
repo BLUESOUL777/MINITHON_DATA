@@ -536,379 +536,388 @@ export default function Dashboard() {
     setExportFormat('ppt');
     
     try {
-      // Create a dynamic script element to load PptxGenJS
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js';
-      document.head.appendChild(script);
-      
-      await new Promise((resolve) => {
-        script.onload = resolve;
-      });
+      // Check if PptxGenJS is already loaded
+      // @ts-ignore
+      if (typeof window.PptxGenJS === 'undefined') {
+        // Create a dynamic script element to load PptxGenJS
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js';
+        script.crossOrigin = 'anonymous';
+        document.head.appendChild(script);
+        
+        await new Promise((resolve, reject) => {
+          script.onload = () => {
+            console.log('PptxGenJS loaded successfully');
+            resolve(true);
+          };
+          script.onerror = (error) => {
+            console.error('Failed to load PptxGenJS:', error);
+            reject(new Error('Failed to load PowerPoint library'));
+          };
+          
+          // Timeout after 10 seconds
+          setTimeout(() => {
+            reject(new Error('Timeout loading PowerPoint library'));
+          }, 10000);
+        });
+      }
       
       // @ts-ignore
+      const PptxGenJS = window.PptxGenJS;
+      if (!PptxGenJS) {
+        throw new Error('PowerPoint library not available');
+      }
+      
       const pptx = new PptxGenJS();
       
       // Set presentation properties
       pptx.author = 'Analytics Dashboard';
-      pptx.company = 'Your Company';
+      pptx.company = 'Analytics Platform';
       pptx.subject = 'Analytics Report';
       pptx.title = 'Dashboard Analytics Report';
       
-      // Define master slide
+      // Define master slide with improved styling
       pptx.defineSlideMaster({
         title: 'MASTER_SLIDE',
         background: { color: 'FFFFFF' },
         objects: [
-          { rect: { x: 0, y: 0, w: '100%', h: 0.75, fill: { color: '3B82F6' } } },
-          { text: { 
-            text: 'Analytics Dashboard', 
-            options: { x: 0.5, y: 0.1, w: 9, h: 0.5, fontSize: 18, color: 'FFFFFF', bold: true } 
-          }}
+          { 
+            rect: { 
+              x: 0, y: 0, w: '100%', h: 0.75, 
+              fill: {
+                type: 'solid',
+                color: '3B82F6'
+              }
+            }
+          },
+          { 
+            text: {
+              text: 'Analytics Dashboard Report',
+              options: { 
+                x: 0.5, y: 0.15, w: 9, h: 0.45, 
+                fontSize: 18, color: 'FFFFFF', bold: true,
+                align: 'center'
+              }
+            }
+          }
         ]
       });
       
+      // Get filtered data for the presentation
+      const summaryData = getFilteredData();
+      if (summaryData.length === 0) {
+        throw new Error('No data available for export');
+      }
+      
       // Slide 1: Title Slide
       let slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      
       slide.addText('Analytics Dashboard Report', {
-        x: 0.5,
-        y: 1.5,
-        w: 9,
-        h: 1,
-        fontSize: 36,
-        bold: true,
-        color: '333333',
+        x: 0.5, y: 1.5, w: 9, h: 1,
+        fontSize: 36, bold: true, color: '1F2937',
         align: 'center'
       });
       
       slide.addText(`Generated on ${new Date().toLocaleDateString()}`, {
-        x: 0.5,
-        y: 2.8,
-        w: 9,
-        h: 0.5,
-        fontSize: 14,
-        color: '666666',
+        x: 0.5, y: 2.8, w: 9, h: 0.5,
+        fontSize: 14, color: '6B7280',
         align: 'center'
       });
       
-      slide.addText(`Analysis Period: ${filterMode === 'all' ? 'All Data' : filterMode === 'range' ? `${startMonth} - ${endMonth}` : selectedMonths.join(', ')}`, {
-        x: 0.5,
-        y: 3.5,
-        w: 9,
-        h: 0.5,
-        fontSize: 12,
-        color: '999999',
+      const periodText = filterMode === 'all' 
+        ? 'All Available Data' 
+        : filterMode === 'range' 
+          ? `${startMonth || 'Start'} - ${endMonth || 'End'}` 
+          : `Selected Months: ${selectedMonths.join(', ')}`;
+      
+      slide.addText(`Analysis Period: ${periodText}`, {
+        x: 0.5, y: 3.5, w: 9, h: 0.5,
+        fontSize: 12, color: '9CA3AF',
         align: 'center'
       });
       
-      // Slide 2: Executive Summary
+      // Slide 2: Executive Summary with enhanced metrics
       slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      
       slide.addText('Executive Summary', {
-        x: 0.5,
-        y: 1,
-        w: 9,
-        h: 0.5,
-        fontSize: 24,
-        bold: true,
-        color: '333333'
+        x: 0.5, y: 1, w: 9, h: 0.6,
+        fontSize: 28, bold: true, color: '1F2937'
       });
       
-      const summaryData = getFilteredData();
-      const totalRevenue = summaryData.reduce((sum, m) => sum + m.value, 0);
-      const totalUsers = summaryData.reduce((sum, m) => sum + m.users, 0);
-      const avgConversion = summaryData.reduce((sum, m) => sum + m.conversionRate, 0) / summaryData.length;
-      const avgSession = summaryData.reduce((sum, m) => sum + m.avgSession, 0) / summaryData.length;
+      const totalRevenue = summaryData.reduce((sum, m) => sum + (m.value || 0), 0);
+      const totalUsers = summaryData.reduce((sum, m) => sum + (m.users || 0), 0);
+      const avgConversion = summaryData.length > 0 
+        ? summaryData.reduce((sum, m) => sum + (m.conversionRate || 0), 0) / summaryData.length 
+        : 0;
+      const avgSession = summaryData.length > 0
+        ? summaryData.reduce((sum, m) => sum + (m.avgSession || 0), 0) / summaryData.length
+        : 0;
       
-      // Create summary cards
+      // Create enhanced summary cards
       const summaryCards = [
-        { title: 'Total Revenue', value: `$${totalRevenue.toLocaleString()}`, color: '3B82F6' },
-        { title: 'Total Users', value: totalUsers.toLocaleString(), color: '10B981' },
-        { title: 'Avg Conversion', value: `${avgConversion.toFixed(1)}%`, color: 'F59E0B' },
-        { title: 'Avg Session', value: `${Math.floor(avgSession)}m`, color: '8B5CF6' }
+        { title: 'Total Revenue', value: `$${totalRevenue.toLocaleString()}`, color: '3B82F6', bgColor: 'EBF8FF' },
+        { title: 'Total Users', value: totalUsers.toLocaleString(), color: '059669', bgColor: 'ECFDF5' },
+        { title: 'Avg Conversion', value: `${avgConversion.toFixed(1)}%`, color: 'D97706', bgColor: 'FFFBEB' },
+        { title: 'Avg Session', value: `${Math.floor(avgSession)}m ${Math.round((avgSession % 1) * 60)}s`, color: '7C3AED', bgColor: 'F3E8FF' }
       ];
       
       summaryCards.forEach((card, i) => {
-        const x = 0.5 + (i % 2) * 4.5;
-        const y = 2 + Math.floor(i / 2) * 1.8;
+        const x = 0.75 + (i % 2) * 4.25;
+        const y = 2.2 + Math.floor(i / 2) * 1.8;
         
-        // Card background
-        slide.addShape('rect', {
-          x: x,
-          y: y,
-          w: 4,
-          h: 1.5,
-          fill: { color: 'F8F9FA' },
-          line: { color: 'E5E7EB', width: 1 }
+        // Enhanced card background with shadow effect
+        slide.addShape(pptx.ShapeType.rect, {
+          x: x, y: y, w: 3.8, h: 1.4,
+          fill: { color: card.bgColor },
+          line: { color: 'E5E7EB', width: 1 },
+          shadow: {
+            type: 'outer',
+            blur: 3,
+            offset: 2,
+            angle: 45,
+            color: '00000015'
+          }
         });
         
         // Card title
         slide.addText(card.title, {
-          x: x + 0.2,
-          y: y + 0.2,
-          w: 3.6,
-          h: 0.4,
-          fontSize: 12,
-          color: '666666'
+          x: x + 0.2, y: y + 0.25, w: 3.4, h: 0.4,
+          fontSize: 13, color: '4B5563', bold: true
         });
         
         // Card value
         slide.addText(card.value, {
-          x: x + 0.2,
-          y: y + 0.7,
-          w: 3.6,
-          h: 0.6,
-          fontSize: 20,
-          bold: true,
-          color: card.color
+          x: x + 0.2, y: y + 0.7, w: 3.4, h: 0.5,
+          fontSize: 22, bold: true, color: card.color
         });
       });
       
-      // Slide 3: Monthly Performance Table
+      // Slide 3: Data Table with improved formatting
       slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
+      
       slide.addText('Monthly Performance Data', {
-        x: 0.5,
-        y: 1,
-        w: 9,
-        h: 0.5,
-        fontSize: 24,
-        bold: true,
-        color: '333333'
+        x: 0.5, y: 1, w: 9, h: 0.6,
+        fontSize: 28, bold: true, color: '1F2937'
       });
       
-      // Create table data
-      const tableData = [
-        [
-          { text: 'Month', options: { bold: true, fill: { color: 'F8F9FA' } } },
-          { text: 'Revenue', options: { bold: true, fill: { color: 'F8F9FA' } } },
-          { text: 'Users', options: { bold: true, fill: { color: 'F8F9FA' } } },
-          { text: 'Conv. Rate', options: { bold: true, fill: { color: 'F8F9FA' } } },
-          { text: 'Avg Session', options: { bold: true, fill: { color: 'F8F9FA' } } }
-        ]
-      ];
+      // Create table with proper structure
+      const tableRows = [];
       
-      filteredData.forEach(row => {
-        tableData.push([
-          { text: row.name, options: { bold: false, fill: { color: 'FFFFFF' } } },
-          { text: `$${row.value.toLocaleString()}`, options: { bold: false, fill: { color: 'FFFFFF' } } },
-          { text: row.users.toLocaleString(), options: { bold: false, fill: { color: 'FFFFFF' } } },
-          { text: `${row.conversionRate.toFixed(1)}%`, options: { bold: false, fill: { color: 'FFFFFF' } } },
-          { text: `${Math.floor(row.avgSession)}m`, options: { bold: false, fill: { color: 'FFFFFF' } } }
+      // Header row
+      tableRows.push([
+        { text: 'Month', options: { bold: true, fill: '3B82F6', color: 'FFFFFF', align: 'center' } },
+        { text: 'Revenue', options: { bold: true, fill: '3B82F6', color: 'FFFFFF', align: 'center' } },
+        { text: 'Users', options: { bold: true, fill: '3B82F6', color: 'FFFFFF', align: 'center' } },
+        { text: 'Conv. Rate', options: { bold: true, fill: '3B82F6', color: 'FFFFFF', align: 'center' } },
+        { text: 'Avg Session', options: { bold: true, fill: '3B82F6', color: 'FFFFFF', align: 'center' } }
+      ]);
+      
+      // Data rows with alternating colors
+      summaryData.forEach((row, index) => {
+        const bgColor = index % 2 === 0 ? 'F8FAFC' : 'FFFFFF';
+        tableRows.push([
+          { text: row.name || '', options: { fill: bgColor, align: 'center' } },
+          { text: `$${(row.value || 0).toLocaleString()}`, options: { fill: bgColor, align: 'right' } },
+          { text: (row.users || 0).toLocaleString(), options: { fill: bgColor, align: 'right' } },
+          { text: `${(row.conversionRate || 0).toFixed(1)}%`, options: { fill: bgColor, align: 'center' } },
+          { text: `${Math.floor(row.avgSession || 0)}m`, options: { fill: bgColor, align: 'center' } }
         ]);
       });
       
-      slide.addTable(tableData, {
-        x: 0.5,
-        y: 2,
-        w: 9,
-        h: 4,
-        fontSize: 10,
-        border: { type: 'solid', color: 'E5E7EB' },
-        fill: { color: 'FFFFFF' }
+      slide.addTable(tableRows, {
+        x: 0.5, y: 2, w: 9, h: 4.5,
+        fontSize: 11,
+        border: { type: 'solid', color: 'CBD5E1', pt: 1 },
+        margin: 0.1,
+        colW: [1.5, 2, 1.8, 1.8, 1.9]
       });
       
-      // Slide 4: Growth Analysis
+      // Slide 4: Growth Analysis with visual elements
       slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
-      slide.addText('Growth Analysis & Trends', {
-        x: 0.5,
-        y: 1,
-        w: 9,
-        h: 0.5,
-        fontSize: 24,
-        bold: true,
-        color: '333333'
+      
+      slide.addText('Growth Analysis & Key Metrics', {
+        x: 0.5, y: 1, w: 9, h: 0.6,
+        fontSize: 28, bold: true, color: '1F2937'
       });
       
-      const firstMonth = filteredData[0];
-      const lastMonth = filteredData[filteredData.length - 1];
-      const revenueGrowth = ((lastMonth.value - firstMonth.value) / firstMonth.value * 100);
-      const userGrowth = ((lastMonth.users - firstMonth.users) / firstMonth.users * 100);
-      
-      const growthMetrics = [
-        { label: 'Revenue Growth', value: `${revenueGrowth.toFixed(1)}%`, positive: revenueGrowth >= 0 },
-        { label: 'User Growth', value: `${userGrowth.toFixed(1)}%`, positive: userGrowth >= 0 },
-        { label: 'Period', value: `${firstMonth.name} - ${lastMonth.name}`, positive: true },
-        { label: 'Data Points', value: `${filteredData.length} months`, positive: true }
-      ];
-      
-      growthMetrics.forEach((metric, i) => {
-        const y = 2.5 + i * 0.8;
+      if (summaryData.length >= 2) {
+        const firstMonth = summaryData[0];
+        const lastMonth = summaryData[summaryData.length - 1];
+        const revenueGrowth = firstMonth.value 
+          ? ((lastMonth.value - firstMonth.value) / firstMonth.value * 100) 
+          : 0;
+        const userGrowth = firstMonth.users 
+          ? ((lastMonth.users - firstMonth.users) / firstMonth.users * 100) 
+          : 0;
         
-        slide.addText(metric.label + ':', {
-          x: 2,
-          y: y,
-          w: 3,
-          h: 0.5,
-          fontSize: 14,
-          color: '666666'
-        });
+        const growthMetrics = [
+          { 
+            label: 'Revenue Growth', 
+            value: `${revenueGrowth >= 0 ? '+' : ''}${revenueGrowth.toFixed(1)}%`, 
+            positive: revenueGrowth >= 0,
+            icon: revenueGrowth >= 0 ? '↗' : '↘'
+          },
+          { 
+            label: 'User Growth', 
+            value: `${userGrowth >= 0 ? '+' : ''}${userGrowth.toFixed(1)}%`, 
+            positive: userGrowth >= 0,
+            icon: userGrowth >= 0 ? '↗' : '↘'
+          },
+          { 
+            label: 'Analysis Period', 
+            value: `${firstMonth.name} - ${lastMonth.name}`, 
+            positive: true,
+            icon: '📊'
+          },
+          { 
+            label: 'Data Points', 
+            value: `${summaryData.length} months`, 
+            positive: true,
+            icon: '📈'
+          }
+        ];
         
-        slide.addText(metric.value, {
-          x: 5,
-          y: y,
-          w: 3,
-          h: 0.5,
-          fontSize: 14,
-          bold: true,
-          color: metric.positive ? '10B981' : 'EF4444'
+        growthMetrics.forEach((metric, i) => {
+          const y = 2.2 + i * 0.9;
+          const bgColor = metric.positive ? 'ECFDF5' : 'FEF2F2';
+          const textColor = metric.positive ? '059669' : 'DC2626';
+          
+          // Metric background
+          slide.addShape(pptx.ShapeType.rect, {
+            x: 1, y: y - 0.1, w: 8, h: 0.7,
+            fill: { color: bgColor },
+            line: { color: 'E5E7EB', width: 1 }
+          });
+          
+          // Icon
+          slide.addText(metric.icon, {
+            x: 1.3, y: y, w: 0.5, h: 0.5,
+            fontSize: 16
+          });
+          
+          // Label
+          slide.addText(metric.label, {
+            x: 2, y: y, w: 3, h: 0.5,
+            fontSize: 16, color: '374151', bold: true
+          });
+          
+          // Value
+          slide.addText(metric.value, {
+            x: 5.5, y: y, w: 3, h: 0.5,
+            fontSize: 16, bold: true, color: textColor,
+            align: 'right'
+          });
         });
-      });
+      }
       
-      // Slide 5: Device Distribution
+      // Slide 5: Insights and Recommendations
       slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
-      slide.addText('Device Distribution Analysis', {
-        x: 0.5,
-        y: 1,
-        w: 9,
-        h: 0.5,
-        fontSize: 24,
-        bold: true,
-        color: '333333'
+      
+      slide.addText('Key Insights & Strategic Recommendations', {
+        x: 0.5, y: 1, w: 9, h: 0.6,
+        fontSize: 26, bold: true, color: '1F2937'
       });
       
-      const totalDesktop = filteredData.reduce((sum, m) => sum + m.desktopUsers, 0);
-      const totalMobile = filteredData.reduce((sum, m) => sum + m.mobileUsers, 0);
-      const totalTablet = filteredData.reduce((sum, m) => sum + m.tabletUsers, 0);
-      const totalDevices = totalDesktop + totalMobile + totalTablet;
-      
-      const deviceData = [
-        { device: 'Desktop', users: totalDesktop, percent: Math.round(totalDesktop / totalDevices * 100) },
-        { device: 'Mobile', users: totalMobile, percent: Math.round(totalMobile / totalDevices * 100) },
-        { device: 'Tablet', users: totalTablet, percent: Math.round(totalTablet / totalDevices * 100) }
-      ];
-      
-      deviceData.forEach((device, i) => {
-        const y = 2.5 + i * 1.2;
-        
-        slide.addText(device.device, {
-          x: 2,
-          y: y,
-          w: 2,
-          h: 0.5,
-          fontSize: 14,
-          color: '666666'
-        });
-        
-        // Progress bar background
-        slide.addShape('rect', {
-          x: 4,
-          y: y,
-          w: 3,
-          h: 0.4,
-          fill: { color: 'F3F4F6' },
-          line: { color: 'E5E7EB', width: 0.5 }
-        });
-        
-        // Progress bar fill
-        slide.addShape('rect', {
-          x: 4,
-          y: y,
-          w: 3 * (device.percent / 100),
-          h: 0.4,
-          fill: { color: i === 0 ? '3B82F6' : i === 1 ? '10B981' : 'F59E0B' },
-          line: 'none'
-        });
-        
-        slide.addText(`${device.percent}% (${device.users.toLocaleString()} users)`, {
-          x: 7.2,
-          y: y,
-          w: 2,
-          h: 0.5,
-          fontSize: 12,
-          color: '333333'
-        });
-      });
-      
-      // Slide 6: Key Insights & Recommendations
-      slide = pptx.addSlide({ masterName: 'MASTER_SLIDE' });
-      slide.addText('Key Insights & Recommendations', {
-        x: 0.5,
-        y: 1,
-        w: 9,
-        h: 0.5,
-        fontSize: 24,
-        bold: true,
-        color: '333333'
-      });
-      
+      // Generate dynamic insights based on data
       const insights = [];
       const recommendations = [];
       
-      if (revenueGrowth > 10) {
-        insights.push('Strong revenue growth indicates healthy business expansion');
-        recommendations.push('Continue current strategies and consider scaling');
-      } else if (revenueGrowth < 0) {
-        insights.push('Revenue decline requires immediate attention');
-        recommendations.push('Review pricing and customer retention strategies');
+      if (summaryData.length >= 2) {
+        const firstMonth = summaryData[0];
+        const lastMonth = summaryData[summaryData.length - 1];
+        const revenueGrowth = firstMonth.value 
+          ? ((lastMonth.value - firstMonth.value) / firstMonth.value * 100) 
+          : 0;
+        const userGrowth = firstMonth.users 
+          ? ((lastMonth.users - firstMonth.users) / firstMonth.users * 100) 
+          : 0;
+        
+        // Revenue insights
+        if (revenueGrowth > 10) {
+          insights.push('Strong revenue growth demonstrates healthy business expansion');
+          recommendations.push('Maintain current growth strategies and explore scaling opportunities');
+        } else if (revenueGrowth < -5) {
+          insights.push('Revenue decline indicates immediate attention required');
+          recommendations.push('Review pricing strategy and implement retention programs');
+        } else {
+          insights.push('Revenue showing stable performance with room for optimization');
+          recommendations.push('Focus on conversion improvements and customer value enhancement');
+        }
+        
+        // User growth insights
+        if (userGrowth > 15) {
+          insights.push('Exceptional user acquisition performance');
+          recommendations.push('Prioritize user retention to maximize lifetime value');
+        } else if (userGrowth < 0) {
+          insights.push('User base showing decline - immediate action needed');
+          recommendations.push('Invest in marketing channels and user experience improvements');
+        }
+        
+        // Conversion insights
+        if (avgConversion > 4) {
+          insights.push('High conversion rates indicate effective user experience');
+          recommendations.push('Continue A/B testing and optimization efforts');
+        } else {
+          insights.push('Conversion rates have significant improvement potential');
+          recommendations.push('Conduct user research and optimize conversion funnel');
+        }
       }
       
-      if (userGrowth > 15) {
-        insights.push('Excellent user acquisition performance');
-        recommendations.push('Focus on retention to maintain momentum');
-      } else if (userGrowth < 5) {
-        insights.push('User growth needs improvement');
-        recommendations.push('Invest in marketing and acquisition channels');
-      }
-      
-      if (avgConversion > 4) {
-        insights.push('High conversion rates show effective UX');
-        recommendations.push('Continue optimization through A/B testing');
-      } else {
-        insights.push('Conversion rates have room for improvement');
-        recommendations.push('Conduct user research to optimize funnel');
-      }
-      
-      slide.addText('Key Insights:', {
-        x: 0.5,
-        y: 2,
-        w: 4,
-        h: 0.5,
-        fontSize: 16,
-        bold: true,
-        color: '3B82F6'
+      // Add insights section
+      slide.addText('📊 Key Insights', {
+        x: 0.5, y: 2, w: 4, h: 0.5,
+        fontSize: 18, bold: true, color: '3B82F6'
       });
       
-      insights.forEach((insight, i) => {
+      insights.slice(0, 3).forEach((insight, i) => {
         slide.addText(`• ${insight}`, {
-          x: 0.7,
-          y: 2.5 + i * 0.5,
-          w: 4,
-          h: 0.4,
-          fontSize: 11,
-          color: '666666'
+          x: 0.7, y: 2.6 + i * 0.6, w: 4, h: 0.5,
+          fontSize: 12, color: '4B5563'
         });
       });
       
-      slide.addText('Recommendations:', {
-        x: 5,
-        y: 2,
-        w: 4,
-        h: 0.5,
-        fontSize: 16,
-        bold: true,
-        color: '10B981'
+      // Add recommendations section
+      slide.addText('🎯 Recommendations', {
+        x: 5, y: 2, w: 4, h: 0.5,
+        fontSize: 18, bold: true, color: '059669'
       });
       
-      recommendations.forEach((rec, i) => {
+      recommendations.slice(0, 3).forEach((rec, i) => {
         slide.addText(`• ${rec}`, {
-          x: 5.2,
-          y: 2.5 + i * 0.5,
-          w: 4,
-          h: 0.4,
-          fontSize: 11,
-          color: '666666'
+          x: 5.2, y: 2.6 + i * 0.6, w: 4, h: 0.5,
+          fontSize: 12, color: '4B5563'
         });
       });
       
-      // Save presentation
-      pptx.writeFile({ fileName: `analytics-report-${new Date().toISOString().split('T')[0]}.pptx` });
+      // Save presentation with error handling
+      const fileName = `analytics-report-${new Date().toISOString().split('T')[0]}.pptx`;
+      
+      await pptx.writeFile({ fileName });
+      
+      // Show success message
+      console.log('PowerPoint presentation generated successfully');
       
     } catch (error) {
       console.error('Error generating PowerPoint:', error);
-      alert('Error generating PowerPoint. Please try again.');
+      
+      let errorMessage = 'Failed to generate PowerPoint presentation.';
+      if (error instanceof Error) {
+        if (error.message.includes('library')) {
+          errorMessage = 'Failed to load PowerPoint library. Please check your internet connection.';
+        } else if (error.message.includes('No data')) {
+          errorMessage = 'No data available for export. Please ensure you have data to export.';
+        } else {
+          errorMessage = `Export failed: ${error.message}`;
+        }
+      }
+      
+      alert(errorMessage);
     } finally {
       setIsExporting(false);
       setExportFormat(null);
     }
   };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40 dark:from-slate-900 dark:via-slate-800/30 dark:to-indigo-900/40">

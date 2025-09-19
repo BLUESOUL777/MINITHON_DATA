@@ -20,7 +20,7 @@ export function Layout({ children }: LayoutProps) {
                 DataVision AI
               </span>
               <span className="text-sm text-muted-foreground">
-                © 2024 DataVision AI. All rights reserved.
+                © 2025 DataVision AI. All rights reserved.
               </span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
